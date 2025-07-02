@@ -20,12 +20,14 @@ from mtuq.util.cap import taper
 import multiprocessing
 import emcee
 import sys
-sys.path.insert(0, '/Users/hujy/Documents/Research/BayMTI/src/')
-from likelihood import *
-from utils.data_selection import data_noise_estimate_uncorrelated, get_solution
-from utils.misfit_preparation import shift_greens, misfit_preparation
-from utils.visualization import plot_waveform_fit
+sys.path.insert(0, '/Users/u7091895/Documents/Research/BayMTI/HiBaysin/src/')
+from misfit.likelihood import *
+from util.data_selection import data_noise_estimate_uncorrelated, get_solution
+from util.misfit_preparation import shift_greens, misfit_preparation
+from visualization.visualization import plot_waveform_fit
 from obspy.signal.filter import bandpass
+
+os.environ["OMP_NUM_THREADS"] = "1"
 
 def ned2rtp(mt_ned):
     Mxx,Myy,Mzz, Mxy,Mxz,Myz = mt_ned
@@ -47,8 +49,8 @@ if __name__=='__main__':
     #   
 
 
-    path_data=    fullpath('/Users/hujy/Documents/Research/BayMTI/data/20090407201255351/*.[zrt]')
-    path_weights= fullpath('/Users/hujy/Documents/Research/BayMTI/data/20090407201255351/weights.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/*.[zrt]')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/weights.dat')
     event_id=     '20090407201255351'
     model=        'ak135'
 
@@ -101,7 +103,7 @@ if __name__=='__main__':
         'time': '2009-04-07T20:12:55.000000Z',
         'latitude': 61.454,
         'longitude': -149.743,
-        'depth_in_m': 1000.,
+        'depth_in_m': 10000.,
         })
     evdp_in_km = int(origin.depth_in_m/1000)
 
@@ -208,22 +210,36 @@ if __name__=='__main__':
     #
 
     if comm.rank==0:
-        print('Evaluating surface wave misfit...\n')
+        ##
+        MAXVAL = 3600
         ns,nc,ne,nt = greens_sw_array.shape
+        emcee_dataset = {
+           'MAXVAL':MAXVAL,
+           'ne': ne,
+           'ns': ns,
+           'nc': nc,
+           'nt': nt,
+           'delta': 1.0,
+           'obs':data_sw_array,
+           'noise_std':noise_std_sw,
+           'green_tensor':greens_sw_array
+        }
+        log_prob_fn = Loglikelihood(emcee_dataset, 'full_mij_uncorrelated')
+        
+        print('Evaluating surface wave misfit...\n')
+        
         np.random.seed(1000)
         ##number of unknowns
         ndim = ne + ns + 2*ns
         nwalker = 600
         nsteps = 10000
-        MAXVAL = 3600
         init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
 
         print('Important parameters: ne-%d, ns-%s, nc-%d, nt-%d' % (ne, ns, nc, nt))
         ############### SAMPLING MODEL SPACE WITH EMCEE ###############
         with multiprocessing.Pool() as pool:
-            log_prob_fn = log_prob_noiseamp_timeshift_mij
             ## Initializa the sample
-            sampler = emcee.EnsembleSampler(nwalker, ndim, log_prob_fn, args=[data_sw_array, greens_sw_array, noise_std_sw], pool=pool)
+            sampler = emcee.EnsembleSampler(nwalker, ndim, log_prob_fn, pool=pool)
             ## Running MCMC
             state = sampler.run_mcmc(init, nsteps, progress=True)
  
@@ -277,7 +293,6 @@ if __name__=='__main__':
         plot_data_greens1(event_id+'TT2015_waveforms_sw_syn_d%skm_noise_rev.png' % evdp_in_km,
             data_sw, greens_sw, process_sw, 
             misfit_sw, stations, origin, best_mt, lune_dict)
-
 
         plot_beachball(event_id+'TT2015_beachball_sw_syn_d%skm_noise_rev.png' % evdp_in_km,
             best_mt, stations, origin)

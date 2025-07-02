@@ -1,8 +1,6 @@
 import numpy as np
 import time
 from copy import deepcopy
-from mtuq.misfit.waveform._stats import _flatten, calculate_norm_data
-from mtuq.misfit.waveform.level1 import correlate
 from mtuq.util.math import to_mij, to_rtp
 from mtuq.util.signal import get_components, get_time_sampling
 from mtuq.misfit.waveform import level2 as level2

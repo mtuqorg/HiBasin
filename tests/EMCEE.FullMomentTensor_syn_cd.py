@@ -20,13 +20,15 @@ from mtuq.util.cap import taper
 import multiprocessing
 import emcee
 import sys
-sys.path.insert(0, '/Users/hujy/Documents/Research/BayMTI/src/')
-from likelihood import *
-from utils.math import exponential_covariance, calc_InversionDeterminant_cd
-from utils.data_selection import data_noise_estimate_uncorrelated, get_solution
-from utils.misfit_preparation import shift_greens, misfit_preparation
-from utils.visualization import plot_waveform_fit
+sys.path.insert(0, '/Users/u7091895/Documents/Research/BayMTI/HiBaysin/src/')
+from misfit.likelihood import *
+from util.math import exponential_covariance, calc_InversionDeterminant_cd
+from util.data_selection import data_noise_estimate_uncorrelated, get_solution
+from util.misfit_preparation import shift_greens, misfit_preparation
+from visualization.visualization import plot_waveform_fit
 from obspy.signal.filter import bandpass
+
+os.environ["OMP_NUM_THREADS"] = "1"
 
 def ned2rtp(mt_ned):
     Mxx,Myy,Mzz, Mxy,Mxz,Myz = mt_ned
@@ -48,8 +50,8 @@ if __name__=='__main__':
     #   
 
 
-    path_data=    fullpath('/Users/hujy/Documents/Research/BayMTI/data/20090407201255351/*.[zrt]')
-    path_weights= fullpath('/Users/hujy/Documents/Research/BayMTI/data/20090407201255351/weights.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/*.[zrt]')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/weights.dat')
     event_id=     '20090407201255351'
     model=        'ak135'
 
@@ -162,8 +164,8 @@ if __name__=='__main__':
     #ISO source
     # mt = ned2rtp(np.loadtxt('mt_input.txt'))
     # DC source
-    mt = np.array([-8.88783183e+15,  4.66977228e+16, -3.78098910e+16,  \
-                   3.71126807e+15, 2.09101333e+16,  1.47054371e+16])
+    # mt = np.array([-8.88783183e+15,  4.66977228e+16, -3.78098910e+16,  \
+    #                3.71126807e+15, 2.09101333e+16,  1.47054371e+16])
     mt = np.array([-0.089, 0.467, -0.378,  \
                 0.037,  0.209, 0.147]) *1.0e17
     #CLVD source
@@ -175,14 +177,6 @@ if __name__=='__main__':
     cov_matrix = exponential_covariance(nt,4)
     mean = np.zeros(nt)
     
-    cov_d = np.zeros((ns,nc,nt,nt))
-    for s in range(ns):
-        for c in range(nc):
-            cov_d[s,c] = cov_matrix
-    ##calculate the inverse of covariance matrix, cov_d, for pre-event ambient noise series
-    cov_inv, log_cov_det = calc_InversionDeterminant_cd(cov_d)
-    
-
     fig,ax = plt.subplots(1,3, figsize=(4.5,7), sharex=True, sharey=True)
     comp_title = ['BHZ','BHR','BHT']
     max_amp = 1.5*np.max(syn_data)
@@ -214,7 +208,7 @@ if __name__=='__main__':
             data_sw[s].select(channel=comp_title[c])[0].data = tmp
             data_sw_used[s].select(channel=comp_title[c])[0].data = tmp   
     plt.savefig('waveform.jpg', bbox_inches='tight', dpi=300)
-    plt.show()
+    plt.close()
 
     ##calculate the upper bound of VR
     res = data_sw_array - syn_data
@@ -231,22 +225,36 @@ if __name__=='__main__':
     #
 
     if comm.rank==0:
-        print('Evaluating surface wave misfit...\n')
+        ##
+        MAXVAL = 3600
         ns,nc,ne,nt = greens_sw_array.shape
+        emcee_dataset = {
+           'MAXVAL':MAXVAL,
+           'ne': ne,
+           'ns': ns,
+           'nc': nc,
+           'nt': nt,
+           'delta': 1.0,
+           'obs':data_sw_array,
+           'noise_std':noise_std_sw,
+           'green_tensor':greens_sw_array
+        }
+        log_prob_fn = Loglikelihood(emcee_dataset, 'full_mij_correlated_exp')
+        
+
+        print('Evaluating surface wave misfit...\n')
         np.random.seed(2000)
         ##number of unknowns
         ndim = ne + ns + 2*ns
         nwalker = 600
         nsteps = 10000
-        MAXVAL = 3600
         init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
 
         print('Important parameters: ne-%d, ns-%s, nc-%d, nt-%d' % (ne, ns, nc, nt))
         ############### SAMPLING MODEL SPACE WITH EMCEE ###############
         with multiprocessing.Pool() as pool:
-            log_prob_fn = log_prob_noisecov_timeshift_mij
             ## Initializa the sample
-            sampler = emcee.EnsembleSampler(nwalker, ndim, log_prob_fn, args=[data_sw_array, greens_sw_array, noise_std_sw], pool=pool)
+            sampler = emcee.EnsembleSampler(nwalker, ndim, log_prob_fn)#, pool=pool)
             ## Running MCMC
             state = sampler.run_mcmc(init, nsteps, progress=True)
  

@@ -37,8 +37,8 @@ from mtuq.util.math import to_delta_gamma,to_Mw
 from mtuq.misfit.waveform import level2 as level2
 from mtuq.event import MomentTensor as MT_mtuq
 import sys
-sys.path.insert(0, '/Users/hujy/Documents/Research/BayMTI/src/')
-from utils.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned
+sys.path.insert(0, '/Users/u7091895/Documents/Research/BayMTI/HiBaysin/src/')
+from util.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned
 
 g = Geod(ellps='sphere')
 bm = Basemap(projection='hammer',lon_0=0)
