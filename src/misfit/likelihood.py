@@ -1,39 +1,71 @@
+import os 
+import emcee 
 import numpy as np
-from numpy.fft import fft, ifft, fftfreq
-from util.math import exponential_covariance, calc_InversionDeterminant_cd
+from numpy.fft import rfft, irfft, rfftfreq
+import multiprocessing as mp
+from mtuq.util.math import to_mij, to_rho
+from mtuq.grid.moment_tensor import to_mt
+from mtuq.grid.force import to_force
+from mtuq.grid import UnstructuredGrid
+from src.util.math import to_lune, Tashiro2MT6,ned2rtp
+from src.util.math import exponential_covariance, calc_InversionDeterminant_cd
 
-ns,nc,nt = 8,3,150
-cov_matrix = exponential_covariance(150, 4)
-cov_d = np.broadcast_to(cov_matrix, (ns, nc, nt, nt))
-cov_inv, log_cov_det = calc_InversionDeterminant_cd(cov_d)
+os.environ["OMP_NUM_THREADS"] = "1"
 
-class Loglikelihood:
-    def __init__(self, data, method='full_mij_uncorrelated'):
+## Shared memory for covariance matrix, 
+# not a physical variable but a shared resource
+shared_data = {}
+
+def pool_initializer(shm_name, shape, dtype_str):
+        """Initialize worker for multiprocessing."""
+        # Reconnect to shared memory inside each process to calculate the log probability
+        dtype = np.dtype(dtype_str)
+        existing_shm = mp.shared_memory.SharedMemory(name=shm_name)
+        shared_array = np.ndarray(shape, dtype=dtype, buffer=existing_shm.buf)
+        shared_data['cov_inv'] = shared_array
+        shared_data['shm'] = existing_shm
+        # print(f"[Worker Init] PID={os.getpid()} initialized shared memory: {shm_name} ")
+
+class MCMC_FMT:
+    def __init__(self, data, method='mij_uncorrelated'):
         # Extract data attributes
-        self.MAXVAL = data['MAXVAL']
-        self.ne = data['ne']
-        self.ns = data['ns']
-        self.nc = data['nc']
-        self.nt = data['nt']
-        self.delta = data['delta']
-        self.obs = data['obs'].astype(np.float32)  # shape: (ns, nc, nt)
-        self.noise_std = data['noise_std']  # shape: (ns, nc)
+        self.MAXVAL = data['MAXVAL'] # Maximum value for parameters
+        self.delta = data['delta']   # Time step in seconds
+        self.ns, self.nc, self.ne, self.nt = data['green_tensor'].shape
+        self.obs = data['obs'].astype(np.float32)              # shape: (ns, nc, nt)
+        self.noise_std = data['noise_std'].astype(np.float32)  # shape: (ns, nc)
         self.greens = data['green_tensor'].astype(np.float32)  # shape: (ns, nc, ne, nt)
-        # self.greens_fft = fft(self.greens, axis=-1) #fft of greens tensor
-        self.omega = 2 * np.pi * fftfreq(self.nt, d=self.delta)
+        self.omega = 2 * np.pi * rfftfreq(self.nt, d=self.delta)
+        # Dimensions of the model parameters: ne + ns + ns * 2 (mij, amp, shift)
+        self.ndim = self.ne + self.ns + self.ns * 2  
 
         # Select log-likelihood method
-        if method == 'full_mij_uncorrelated':
+        if method == 'mij_uncorrelated':
             self.log_prob = self._log_prob_full_mij_uncorrelated
-        elif method == 'full_mij_correlated_exp':
+        elif method == 'mij_correlated_exp':
             self.log_prob = self._log_prob_full_mij_correlated_exp
-            # self.cov_matrix = exponential_covariance(self.nt, 4)
-            # cov_d = np.broadcast_to(self.cov_matrix, (self.ns, self.nc, self.nt, self.nt))
-            # self.cov_inv, self.log_cov_det = calc_InversionDeterminant_cd(cov_d)
+        
+            # Create the shared memory for the reference covariance matrix
+            self.cov_inv_shape = data['cov_inv'].shape
+            self.cov_inv_dtype = data['cov_inv'].dtype
+            try:
+                self.shm = mp.shared_memory.SharedMemory(create=True, size=data['cov_inv'].nbytes)
+                ##if using self.shared_array, it will be shared across processes and significantly slow down the computation 
+                shared_array = np.ndarray(self.cov_inv_shape, dtype=self.cov_inv_dtype, buffer=self.shm.buf)
+                shared_array[:] = data['cov_inv'][:]
+            except:
+                print("failed to create shared memory")
+                if hasattr(self, 'shm'):
+                    self.shm.close()
+                    self.shm.unlink()
+                raise
+            
+            self.log_cov_det = data['log_cov_det']
+            self.scale = np.exp(2 * self.log_cov_det / self.nt)
         else:
             raise ValueError(f"Unknown method: {method}")
-
-    def log_prior(self, m):
+        
+    def _log_prior(self, m):
         """Check if parameters are within bounds."""
         return 0 if np.all((-self.MAXVAL <= m) & (m <= self.MAXVAL)) else -np.inf
 
@@ -44,10 +76,12 @@ class Loglikelihood:
         shift_expanded[:, :2] = shift[::2][:, None]
         shift_expanded[:, 2] = shift[1::2]
         phase_shift = np.exp(-1j * omega_expanded * shift_expanded[:, :, None])
-        return np.real(ifft(pred_fft * phase_shift, axis=-1))
+        return np.real(irfft(pred_fft * phase_shift, axis=-1))
 
     def _log_prob_full_mij_uncorrelated(self, m):
         """Log-likelihood with uncorrelated noise."""
+        if not np.isfinite(self._log_prior(m)): return -np.inf
+        
         mij = m[:self.ne]
         amp = (m[self.ne:self.ne + self.ns] + self.MAXVAL) / 720 + 1e-4
         shift = m[self.ne + self.ns:] / 360 #[-10, 10] sec
@@ -55,7 +89,7 @@ class Loglikelihood:
         noise_amp = self.noise_std * amp[:, None]
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
-        pred_fft = fft(pred, axis=-1)
+        pred_fft = rfft(pred, axis=-1)
         pred = self._apply_phase_shift(pred_fft, shift)
 
         # noise weighted residuals
@@ -66,6 +100,7 @@ class Loglikelihood:
 
     def _log_prob_full_mij_correlated_exp(self, m):
         """Log-likelihood with correlated noise using exponential covariance."""
+        if not np.isfinite(self._log_prior(m)): return -np.inf
         mij = m[:self.ne]
         amp = (m[self.ne:self.ne + self.ns] + self.MAXVAL) / 720 + 1e-4
         shift = m[self.ne + self.ns:] / 360
@@ -73,20 +108,84 @@ class Loglikelihood:
         noise_amp = self.noise_std * amp[:, None]
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
-        pred_fft = fft(pred, axis=-1)
+        # apply phase shift in frequency domain based on time shifts
+        pred_fft = rfft(pred, axis=-1)
         pred = self._apply_phase_shift(pred_fft, shift)
 
         # covariance matrix weighted residuals
         res = (self.obs - pred) / noise_amp[:, :, None]
-        res_cov = np.einsum('...i,...ij', res, cov_inv)
-        lp1 = np.einsum('...i,...i', res_cov, res)
-        lp1 /= (noise_amp ** 2 * np.exp(2 * log_cov_det / self.nt))
-        lp2 = 2 * log_cov_det + 2 * self.nt * np.log(noise_amp)
+        lp1 = np.einsum('sct, sctt, sct->sc', res, shared_data['cov_inv'], res) 
+        lp1 /= (noise_amp ** 2 * self.scale)
+
+        lp2 = 2 * self.log_cov_det + 2 * self.nt * np.log(noise_amp)
         return -0.5 * np.sum(lp1 + lp2)
 
-    def __call__(self, m):
-        """Evaluate log-posterior."""
-        lp = self.log_prior(m)
-        if not np.isfinite(lp):
-            return -np.inf
-        return lp + self.log_prob(m) 
+    def get_sampler(self, nchains=512):
+        """Get the sampler for MCMC."""
+        ## forking with shared memory is more stable than spawning
+        ctx = mp.get_context("fork")
+        pool = ctx.Pool(initializer=pool_initializer, initargs=(self.shm.name, self.cov_inv_shape, self.cov_inv_dtype.str))
+        print('Creating a emcee sampler with chains=%s and ndim=%s' % (nchains, self.ndim))
+        sampler = emcee.EnsembleSampler(nchains, self.ndim, self.log_prob, pool=pool)
+        return sampler, pool
+    
+    def get_solution(self, emcee_sampler, warm_up_steps, thin, source_type='full'):
+        flat_samples = emcee_sampler.get_chain(discard=warm_up_steps, thin=thin, flat=True)
+        print ('\nNumber of quasi-independent samples: %d' % flat_samples.shape[0])
+        m_sol = np.mean(flat_samples, axis=0)
+ 
+        ##transformed MT parameters from Lune to premitive parameterization
+        if source_type=='full':
+            v = m_sol[0] / 10800
+            w = m_sol[1] * np.pi / 9600             
+            kappa = (m_sol[2] + self.MAXVAL) / 20           ##0, 360
+            sigma = m_sol[3] / 40                      ##-90, 90
+            h = (m_sol[4] + self.MAXVAL) / 7200             ##cos(dip)
+            rho = to_rho((m_sol[5]+self.MAXVAL)/3600 + 4)   ##Mw: 4-6
+        elif source_type=='dc':
+            v = 0
+            w = 0            
+            kappa = (m_sol[0] + self.MAXVAL) / 20           ##0, 360
+            sigma = m_sol[1] / 40                      ##-90, 90
+            h = (m_sol[2] + self.MAXVAL) / 7200             ##cos(dip)
+            rho = to_rho((m_sol[3]+self.MAXVAL)/3600 + 4)   ##Mw: 4-6
+        elif source_type=='deviatoric':
+            v = m_sol[0] / 10800
+            w = 0          
+            kappa = (m_sol[1] + self.MAXVAL) / 20           ##0, 360
+            sigma = m_sol[2] / 40                      ##-90, 90
+            h = (m_sol[3] + self.MAXVAL) / 7200             ##cos(dip)
+            rho = to_rho((m_sol[4]+self.MAXVAL)/3600 + 4)   ##Mw: 4-6
+        elif source_type=='force':
+            phi = (m_sol[0]+ self.MAXVAL) / 20   #[0, 360]
+            h = m_sol[1] / 3600             #[-1,1]
+            F0 = (m_sol[2] + self.MAXVAL)        #[0,7200]
+        elif source_type == 'mij':
+            m_sol *= 10**15
+            rho,v,w,kappa,sigma,h = to_lune(m_sol[0:6])
+        else:
+            #source type = Tashiro
+            m_sol[:5] = (self.MAXVAL + m_sol[:5]) / 7200   #(0,1)
+            m_sol[5] = (self.MAXVAL + m_sol[5]) / 3600 + 4 #Mw 4-6
+            mij = Tashiro2MT6(m_sol[:6])
+            mij = ned2rtp(mij) #up-south-east convention
+            rho,v,w,kappa,sigma,h = to_lune(mij)
+            
+        if source_type=='force':
+            solution = UnstructuredGrid(
+                dims=('F0','phi', 'h'),
+                coords=(F0, phi, h),
+                callback=to_force)   
+        else:
+            ## moment tensor
+            solution = UnstructuredGrid(
+                dims=('rho','v', 'w', 'kappa', 'sigma', 'h'),
+                coords=(rho, v,w,kappa,sigma,h),
+                callback=to_mt)
+        return solution
+
+    def cleanup(self):
+        """Cleanup shared memory."""
+        self.shm.close()
+        self.shm.unlink()
+        print("Shared memory cleaned up.")  

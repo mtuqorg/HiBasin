@@ -20,12 +20,11 @@ from mtuq.util.cap import taper
 import multiprocessing
 import emcee
 import sys
-sys.path.insert(0, '/Users/u7091895/Documents/Research/BayMTI/HiBaysin/src/')
-from misfit.likelihood import *
-from util.math import exponential_covariance, calc_InversionDeterminant_cd
-from util.data_selection import data_noise_estimate_uncorrelated, get_solution
-from util.misfit_preparation import shift_greens, misfit_preparation
-from visualization.visualization import plot_waveform_fit
+from src.misfit.likelihood import Loglikelihood
+from src.util.math import exponential_covariance, calc_InversionDeterminant_cd
+from src.util.data_selection import data_noise_estimate_uncorrelated, get_solution
+from src.util.misfit_preparation import shift_greens, misfit_preparation
+from src.visualization.visualization import plot_waveform_fit
 from obspy.signal.filter import bandpass
 
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -152,6 +151,7 @@ if __name__=='__main__':
     data_sw_used, greens_sw_used, noise_std_sw= data_noise_estimate_uncorrelated(data_sw, greens_sw, sampling_rate=1)
     data_sw_array, greens_sw_array = misfit_preparation(data_sw_used, greens_sw_used)
     
+  
     # ##calculate the inverse of covariance matrix, cov_d, for pre-event ambient noise series
     # cov_inv, log_cov_det = calc_InversionDeterminant_cd(cov_d)
     #=========================================
@@ -190,7 +190,7 @@ if __name__=='__main__':
             taper(noise, taper_fraction=0.2)
             d_rms = np.sqrt(np.mean(np.square(noise)))
             noise = noise/d_rms * noise_std_sw[s,c]
-            print('sigma of noise: ', np.std(noise, ddof=0))
+            # print('sigma of noise: ', np.std(noise, ddof=0))
             tmp = syn_data[s,c] + noise
             
             #plot
@@ -229,15 +229,11 @@ if __name__=='__main__':
         MAXVAL = 3600
         ns,nc,ne,nt = greens_sw_array.shape
         emcee_dataset = {
-           'MAXVAL':MAXVAL,
-           'ne': ne,
-           'ns': ns,
-           'nc': nc,
-           'nt': nt,
+           'MAXVAL': MAXVAL,
            'delta': 1.0,
-           'obs':data_sw_array,
-           'noise_std':noise_std_sw,
-           'green_tensor':greens_sw_array
+           'obs': data_sw_array,
+           'noise_std': noise_std_sw,
+           'green_tensor': greens_sw_array
         }
         log_prob_fn = Loglikelihood(emcee_dataset, 'full_mij_correlated_exp')
         
@@ -254,7 +250,7 @@ if __name__=='__main__':
         ############### SAMPLING MODEL SPACE WITH EMCEE ###############
         with multiprocessing.Pool() as pool:
             ## Initializa the sample
-            sampler = emcee.EnsembleSampler(nwalker, ndim, log_prob_fn)#, pool=pool)
+            sampler = emcee.EnsembleSampler(nwalker, ndim, log_prob_fn, pool=pool)
             ## Running MCMC
             state = sampler.run_mcmc(init, nsteps, progress=True)
  
@@ -290,7 +286,7 @@ if __name__=='__main__':
         
         ##check the data noise and time shfits
         flat_samples = sampler.get_chain(discard=int(0.5*nsteps), thin=200, flat=True)
-        noise = 2*np.mean(MAXVAL+flat_samples[:,ne:ne+ns], axis=0) / 720 + 0.0001
+        noise = np.mean(MAXVAL+flat_samples[:,ne:ne+ns], axis=0) / 720 + 0.0001
         tau = np.mean(flat_samples[:,ne+ns:], axis=0) / 360
  
         print("noise: ", noise)
