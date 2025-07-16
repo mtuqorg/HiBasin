@@ -5,8 +5,7 @@ from mtuq.grid.moment_tensor import to_mt
 from mtuq.grid.force import to_force
 from mtuq.grid import UnstructuredGrid
 import sys
-sys.path.insert(0, '/Users/u7091895/Documents/Research/BayMTI/HiBaysin/src/')
-from util.math import to_lune, Tashiro2MT6,ned2rtp
+from src.util.math import to_lune, Tashiro2MT6,ned2rtp
 
 MAXVAL=3600
 

@@ -15,9 +15,13 @@ if not sys.warnoptions:
     import warnings
     warnings.simplefilter("ignore")
 
-ranges = [[0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [3, 6]]
-labels = ['$x_1$', '$x_2$', '$x_3$', '$x_4$', '$x_5$', '$M_w$']
 MAXVAL=3600
+
+def map_1D_array_to_ranges(arr, new_min, new_max, old_min=-3600, old_max=3600):
+    """
+    Map a 1D array to a specified range [low, high].
+    """
+    return new_min + (new_max - new_min) * (arr - old_min) / (old_max - old_min)
 ##
 def rtp2ned(mt_rtp):
     Mrr, Mtt, Mpp, Mrt, Mrp, Mtp = mt_rtp
@@ -64,6 +68,44 @@ def ned2rtp2(Mxx,Myy,Mzz,Mxy,Mxz,Myz):
         return np.column_stack([Mrr, Mtt, Mpp, Mrt, Mrp, Mtp])
     else:
         return np.array([Mrr, Mtt, Mpp, Mrt, Mrp, Mtp])
+
+def MT6toMT9(mt):
+    mt9 = np.zeros((3,3))
+    mt9[0,:] = np.array([mt[0], mt[3], mt[4]])
+    mt9[1,:] = np.array([mt[3], mt[1], mt[5]])
+    mt9[2,:] = np.array([mt[4], mt[5], mt[2]])
+    return mt9
+
+def MT9toNatural(mt9):
+    pyrocko_mt = MomentTensor(m=mt9)
+    eigenvals = pyrocko_mt.eigenvals()
+    eigenvals.sort()
+    lambda1, lambda2, lambda3 = eigenvals[::-1] # lamda1 >= lambda2 >= lambda3
+    ## Coordinates of source-type lune diagram
+    rho = np.sqrt(np.sum(eigenvals.dot(eigenvals)))
+    gamma = np.arctan2((-lambda1+2*lambda2-lambda3), (np.sqrt(3)*(lambda1-lambda3))) # longitude
+    beta= np.arccos((lambda1+lambda2+lambda3) / (np.sqrt(3)*rho))
+    sigma = np.pi/2 - beta # latitude
+    strike, dip, rake = pyrocko_mt.both_strike_dip_rake()[0]
+    return (np.degrees(gamma), np.degrees(sigma), strike, dip, rake, pyrocko_mt.moment_magnitude())
+
+def mt2lune(mxx, myy, mzz, mxy, mxz, myz):
+    m33 = np.array([[mxx, mxy, mxz], [mxy, myy, myz], [mxz, myz, mzz]])
+    eivals = np.linalg.eigvals(m33)
+    eivals.sort()
+    
+    ## lune longitude calculated from the eigen value triple
+    nom = -eivals[0] - eivals[2] + 2 * eivals[1]
+    den = np.sqrt(3) * (eivals[2]- eivals[0])
+    gamma = np.arctan2(nom, den) / np.pi * 180
+
+    ## lune latitude calculated from the eigen value triple
+    nom = np.sum(eivals)
+    den = np.sqrt(3) * np.sqrt(np.sum(eivals**2))
+    beta = np.arccos(nom / den) / np.pi * 180
+
+    ## orientation angles determined from the eigen vector triple
+    return gamma, 90 - beta
 
 def to_lune(mij):
     """

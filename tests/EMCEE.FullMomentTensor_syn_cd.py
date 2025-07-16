@@ -17,17 +17,20 @@ from mtuq.grid.moment_tensor import to_mt
 from mtuq.util.math import to_mij, to_rho
 from mtuq.util.cap import taper
 
-import multiprocessing
+import multiprocessing as mp
 import emcee
 import sys
-from src.misfit.likelihood import Loglikelihood
+from src.misfit.likelihood import MCMC_SOLVER
 from src.util.math import exponential_covariance, calc_InversionDeterminant_cd
-from src.util.data_selection import data_noise_estimate_uncorrelated, get_solution
+from src.util.data_selection import data_noise_estimate_uncorrelated
 from src.util.misfit_preparation import shift_greens, misfit_preparation
-from src.visualization.visualization import plot_waveform_fit
+from src.visualization.plot_waveform_fit import plot_waveform_fit
+from src.visualization.plot_posterior import posterior_distribution_mij, posterior_distribution_noise, posterior_distribution_timeshift
 from obspy.signal.filter import bandpass
+from multiprocessing import shared_memory
 
 os.environ["OMP_NUM_THREADS"] = "1"
+mp.set_start_method("fork", force=True)
 
 def ned2rtp(mt_ned):
     Mxx,Myy,Mzz, Mxy,Mxz,Myz = mt_ned
@@ -47,7 +50,6 @@ if __name__=='__main__':
     # USAGE
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
-
 
     path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/*.[zrt]')
     path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/weights.dat')
@@ -90,7 +92,6 @@ if __name__=='__main__':
     wavelet = Trapezoid(
         magnitude=4.5)
 
-
     #
     # Origin time and location will be fixed. For an example in which they 
     # vary, see examples/GridSearch.DoubleCouple+Magnitude+Depth.py
@@ -109,7 +110,6 @@ if __name__=='__main__':
 
     from mpi4py import MPI
     comm = MPI.COMM_WORLD
-
 
     #
     # The main I/O work starts now
@@ -158,16 +158,16 @@ if __name__=='__main__':
     import matplotlib.pyplot as plt
     ##Simulate the new 'observatations' with a given explosive-like MT
     ns,nc,ne,nt = greens_sw_array.shape
-    noise_std_sw = noise_std_sw * 1.5#2.5 CLVD #5 for 1km#5 iso, 8-clvd. 3 for 30km, 1.5 dc
+    noise_std_sw = noise_std_sw #2.5 CLVD #5 for 1km#5 iso, 8-clvd. 3 for 30km, 1.5 dc
     noise_std_sw.tofile('noise_std_sw_sigma.bin')
     # noise_std_sw = np.ones((ns,nc)) * 1.0e-6
     #ISO source
-    # mt = ned2rtp(np.loadtxt('mt_input.txt'))
+    mt = ned2rtp(np.loadtxt('mt_input.txt'))
     # DC source
     # mt = np.array([-8.88783183e+15,  4.66977228e+16, -3.78098910e+16,  \
     #                3.71126807e+15, 2.09101333e+16,  1.47054371e+16])
-    mt = np.array([-0.089, 0.467, -0.378,  \
-                0.037,  0.209, 0.147]) *1.0e17
+    # mt = np.array([-0.089, 0.467, -0.378,  \
+    #             0.037,  0.209, 0.147]) *1.0e17
     #CLVD source
     # mt = ned2rtp(np.array([2.760, -1.661, -1.099, 0.707, 1.048, 0.634])*3.0e16)
     
@@ -215,10 +215,12 @@ if __name__=='__main__':
     vr = (1 - np.sum(res**2)/np.sum(data_sw_array**2)) * 100
     print("The upper bound of VR could be %.1f%%" % vr)
     
-    ##Scale up for Mij
-    M00 = 1.0e15
-    greens_sw_array = greens_sw_array[:, :, :, :] * M00
     #=========================================
+
+    ##test shared memory
+    cov_matrix = exponential_covariance(150, 4)
+    cov_d = np.broadcast_to(cov_matrix, (ns, nc, nt, nt))
+    cov_inv, log_cov_det = calc_InversionDeterminant_cd(cov_d)
 
     #    
     # The main computational work starts now
@@ -228,16 +230,6 @@ if __name__=='__main__':
         ##
         MAXVAL = 3600
         ns,nc,ne,nt = greens_sw_array.shape
-        emcee_dataset = {
-           'MAXVAL': MAXVAL,
-           'delta': 1.0,
-           'obs': data_sw_array,
-           'noise_std': noise_std_sw,
-           'green_tensor': greens_sw_array
-        }
-        log_prob_fn = Loglikelihood(emcee_dataset, 'full_mij_correlated_exp')
-        
-
         print('Evaluating surface wave misfit...\n')
         np.random.seed(2000)
         ##number of unknowns
@@ -247,70 +239,51 @@ if __name__=='__main__':
         init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
 
         print('Important parameters: ne-%d, ns-%s, nc-%d, nt-%d' % (ne, ns, nc, nt))
-        ############### SAMPLING MODEL SPACE WITH EMCEE ###############
-        with multiprocessing.Pool() as pool:
-            ## Initializa the sample
-            sampler = emcee.EnsembleSampler(nwalker, ndim, log_prob_fn, pool=pool)
-            ## Running MCMC
-            state = sampler.run_mcmc(init, nsteps, progress=True)
- 
-        ############### POST SAMPLING ANALYSIS ###############
+        # ## Create the MCMC solver
+        solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, \
+                          noise_std_sw, cov_inv, log_cov_det, max_noise_parameter=10, M00=1.e15, method='mij_correlated')
+        sampler, pool = solver.get_sampler('emcee', nchains=nwalker)
+        # MCMC sampling
+        state = sampler.run_mcmc(init, nsteps, progress=True)
+        solver.cleanup(pool)
+
         ## Print acceptance fraction for diagnosis
         acceptance_rate = 100 * np.mean(sampler.acceptance_fraction)
         print ('Average acceptance rate: %d' % acceptance_rate + '%')
- 
-        ## Get the idea of autocorrelation in the sampled chains
-        try:
-            tau = sampler.get_autocorr_time(tol=0)
-            autocorr_time = int(np.max(tau))
-            print ('\nAutocorrelation time for each coordinates of the model space:\n    ', tau)
-        except Exception as ex:
-            print (ex)
-            autocorr_time = int(nsteps / 50)
- 
-        ## Extract the chain for inspection
-        warmup = 3 * autocorr_time
-        thin = int(autocorr_time/2)
-        mean_sol = get_solution(sampler, warm_up_steps=int(0.5*nsteps), thin=100, source_type='mij')
-        
-        # dictionary of Mij parameters
-        print("The best mt:")
-        print(mean_sol.get_dict(0))
-        
+            
         ##write the samples into files
-        chain_dir = './'
-        flat_samples_out = sampler.get_chain(discard=0, thin=5, flat=False)
-        flat_samples_out.tofile(chain_dir +'EMCEE_sw_noise_mij_syn_d%skm_model_cd.bin' % evdp_in_km)
-        log_prob_samples = sampler.get_log_prob(discard=0, thin=5, flat=False)
-        log_prob_samples.tofile(chain_dir +'EMCEE_sw_noise_mij_syn_d%skm_log_prob_cd.bin' % evdp_in_km)
+        solver.save_chains(sampler, file_path='./', thin=1)
         
-        ##check the data noise and time shfits
-        flat_samples = sampler.get_chain(discard=int(0.5*nsteps), thin=200, flat=True)
-        noise = np.mean(MAXVAL+flat_samples[:,ne:ne+ns], axis=0) / 720 + 0.0001
-        tau = np.mean(flat_samples[:,ne+ns:], axis=0) / 360
- 
-        print("noise: ", noise)
-        print("tau: ", tau)
-
     if comm.rank==0:
 
         #
         # Generate figures and save results
         #
+        
+        ## Extract the chain for inspection
+        source_sol, noise_sol, tau_sol = solver.get_solution(sampler, warm_up_steps=int(0.5*nsteps), thin=100)
+        # dictionary of Mij parameters
+        print("The best mt:")
+        print(source_sol.get_dict(0))
 
         print('Generating figures...\n')
-        best_mt = mean_sol.get(0)
-        lune_dict = mean_sol.get_dict(0)
-        greens_sw = shift_greens(greens_sw, tau)
+        best_mt = source_sol.get(0)
+        lune_dict = source_sol.get_dict(0)
+        greens_sw = shift_greens(greens_sw, tau_sol)
         plot_data_greens1(event_id+'Mij_waveforms_sw_syn_d%skm_noise_cd.png' % evdp_in_km,
             data_sw, greens_sw, process_sw, 
             misfit_sw, stations, origin, best_mt, lune_dict)
 
-
         plot_beachball(event_id+'Mij_beachball_sw_syn_d%skm_noise_cd.png' % evdp_in_km,
             best_mt, stations, origin)
         
-        plot_waveform_fit(best_mt.as_vector(), data_sw_array, greens_sw_array/M00, stations, noise, tau, event_id+'Mij_waveformfit_sw_syn_d%skm_noise_cd.png' % evdp_in_km, evdp_in_km)
+        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'Waveformfit_mean.jpg', evdp_in_km)
+
+        #
+        # Plot the posterior distribution
+        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=10, figure_fname="Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname='Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname='Posterior_timeshift')
 
         print('\nFinished\n')
 
