@@ -98,7 +98,7 @@ if __name__=='__main__':
         'time': '2013-02-12T02:57:51.272500Z',
         'latitude': 41.2921,
         'longitude': 129.0730,
-        'depth_in_m': 500.,
+        'depth_in_m': 1000.,
         })
     evdp_in_km = int(origin.depth_in_m/1000)
 
@@ -138,7 +138,9 @@ if __name__=='__main__':
             data_sw[s] = data_sw[s].resample(1.0)
             greens_sw[s] = greens_sw[s].resample(1.0)
 
-        stations = data.get_stations()
+        for station in stations:
+            station._refresh('delta',1)
+
         stations = comm.bcast(stations, root=0)
         data_sw = comm.bcast(data_sw, root=0)
         greens_sw = comm.bcast(greens_sw, root=0)
