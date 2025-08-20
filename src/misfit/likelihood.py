@@ -30,7 +30,7 @@ def pool_initializer(shm_name, shape, dtype_str):
 
 class MCMC_SOLVER:
     def __init__(self, mistfit_sw, data_sw, greens_sw, noise_std_sw, \
-                 cov_inv, log_cov_det, max_noise_parameter=100, M00=None, method='mij_uncorrelated'):
+                 cov_inv=None, log_cov_det=None, max_noise_parameter=100, M00=None, method='mij_uncorrelated'):
         self.MAXVAL = 3600 # Maximum value for parameters
         # Extract data attributes
         ## self.obs shape: (ns, nc, nt); self.greens shape: (ns, nc, ne, nt)
@@ -226,7 +226,7 @@ class MCMC_SOLVER:
 
         # covariance matrix weighted residuals
         noise_amp = self.noise_std * amp[:, None]
-        res = (self.obs - pred) / noise_amp[:, :, None]
+        res = self.obs - pred
         lp1 = np.einsum('sct, sctt, sct->sc', res, shared_data['cov_inv'], res) 
         lp1 /= (noise_amp ** 2 * self.scale)
 
@@ -249,7 +249,7 @@ class MCMC_SOLVER:
 
         # covariance matrix weighted residuals
         noise_amp = self.noise_std * amp[:, None]
-        res = (self.obs - pred) / noise_amp[:, :, None]
+        res = self.obs - pred
         lp1 = np.einsum('sct, sctt, sct->sc', res, shared_data['cov_inv'], res) 
         lp1 /= (noise_amp ** 2 * self.scale)
 
@@ -276,7 +276,7 @@ class MCMC_SOLVER:
 
         # covariance matrix weighted residuals
         noise_amp = self.noise_std * amp[:, None]
-        res = (self.obs - pred) / noise_amp[:, :, None]
+        res = self.obs - pred
         lp1 = np.einsum('sct, sctt, sct->sc', res, shared_data['cov_inv'], res) 
         lp1 /= (noise_amp ** 2 * self.scale)
 
@@ -328,7 +328,7 @@ class MCMC_SOLVER:
 
         # covariance matrix weighted residuals
         noise_amp = self.noise_std * amp[:, None]
-        res = (self.obs - pred) / noise_amp[:, :, None]
+        res = self.obs - pred
         lp1 = np.einsum('sct, sctt, sct->sc', res, shared_data['cov_inv'], res) 
         lp1 /= (noise_amp ** 2 * self.scale)
 
@@ -396,7 +396,7 @@ class MCMC_SOLVER:
 
         # covariance matrix weighted residuals
         noise_amp = self.noise_std * amp[:, None]
-        res = (self.obs - pred) / noise_amp[:, :, None]
+        res = self.obs - pred
         lp1 = np.einsum('sct, sctt, sct->sc', res, shared_data['cov_inv'], res) 
         lp1 /= (noise_amp ** 2 * self.scale)
 

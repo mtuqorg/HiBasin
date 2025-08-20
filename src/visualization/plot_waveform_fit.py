@@ -93,8 +93,8 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
             ax.set_yticklabels([s.network+'.'+s.station for s in stations])
         else:
             ax.set_yticklabels([])
-        ax.set_xticks([0,75,150])
-        ax.set_xticklabels([0,75,150])
+        ax.set_xticks([0,max(time)+1])
+        ax.set_xticklabels([0,max(time)+1])
         ax.set_ylim(-.7, ns-.5)
         ax.plot([0, nt], [-.7, -.7], lw=2, c='k')
         ax.set_xlim(0, max(time+1))
