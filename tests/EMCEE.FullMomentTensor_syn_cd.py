@@ -241,7 +241,7 @@ if __name__=='__main__':
         print('Important parameters: ne-%d, ns-%s, nc-%d, nt-%d' % (ne, ns, nc, nt))
         # ## Create the MCMC solver
         solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, \
-                          noise_std_sw, cov_inv, log_cov_det, max_noise_parameter=10, M00=1.e15, method='mij_correlated')
+                          noise_std_sw, max_noise_parameter=10, M00=1.e15, method='mij_uncorrelated')
         sampler, pool = solver.get_sampler('emcee', nchains=nwalker)
         # MCMC sampling
         state = sampler.run_mcmc(init, nsteps, progress=True)
@@ -252,7 +252,7 @@ if __name__=='__main__':
         print ('Average acceptance rate: %d' % acceptance_rate + '%')
             
         ##write the samples into files
-        solver.save_chains(sampler, file_path='./', thin=1)
+        solver.save_chains(sampler, file_path='./', thin=10)
         
     if comm.rank==0:
 
@@ -284,6 +284,7 @@ if __name__=='__main__':
         posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=10, figure_fname="Posterior_source_parameter.jpg")
         posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname='Posterior_data_noise.jpg')
         posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname='Posterior_timeshift')
-
+        print(noise_sol)
+        print(tau_sol)
         print('\nFinished\n')
 
