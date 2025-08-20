@@ -21,6 +21,7 @@ import multiprocessing as mp
 import emcee
 import sys
 from src.misfit.likelihood import MCMC_SOLVER
+from src.util.covariance_matrix import covariace_matrix
 from src.util.math import exponential_covariance, calc_InversionDeterminant_cd
 from src.util.data_selection import data_noise_estimate_uncorrelated
 from src.util.misfit_preparation import shift_greens, misfit_preparation
@@ -32,17 +33,6 @@ from multiprocessing import shared_memory
 os.environ["OMP_NUM_THREADS"] = "1"
 mp.set_start_method("fork", force=True)
 
-def ned2rtp(mt_ned):
-    Mxx,Myy,Mzz, Mxy,Mxz,Myz = mt_ned
-    Mrr=Mzz
-    Mtt=Mxx
-    Mpp=Myy
-    Mrt=Mxz
-    Mrp=-Myz
-    Mtp=-Mxy
-    return np.array([Mrr, Mtt, Mpp, Mrt, Mrp, Mtp])
-
-
 if __name__=='__main__':
     #
     # Carries out grid search over all moment tensor parameters
@@ -51,22 +41,26 @@ if __name__=='__main__':
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/*.[zrt]')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090407201255351/weights.dat')
-    event_id=     '20090407201255351'
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/*.BH[ZRT].sac')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/weights.dat')
+    event_id=     '20130212025751000'
     model=        'ak135'
 
     #
     # Surface wave measurements will be made separately
     process_sw = ProcessData(
         filter_type='Bandpass',
-        freq_min=0.025,
-        freq_max=0.0625,
+        freq_min=0.02,
+        freq_max=0.05,
         pick_type='taup',
         taup_model=model,
+        # pick_type='CPS_metadata',
+        # CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/',
+        # CPS_model=model,
         window_type='surface_wave',
-        window_length=150.,
+        window_length=250.,
         capuaf_file=path_weights,
+        apply_scaling = False
         )
 
     #
@@ -101,10 +95,10 @@ if __name__=='__main__':
     #
 
     origin = Origin({
-        'time': '2009-04-07T20:12:55.000000Z',
-        'latitude': 61.454,
-        'longitude': -149.743,
-        'depth_in_m': 30000.,
+        'time': '2013-02-12T02:57:51.272500Z',
+        'latitude': 41.2921,
+        'longitude': 129.0730,
+        'depth_in_m': 500.,
         })
     evdp_in_km = int(origin.depth_in_m/1000)
 
@@ -120,7 +114,7 @@ if __name__=='__main__':
         data = read(path_data, format='sac', 
             event_id=event_id,
             station_id_list=station_id_list,
-            tags=['units:m', 'type:velocity']) 
+            tags=['units:m', 'type:displacement']) 
 
 
         data.sort_by_distance()
@@ -132,95 +126,40 @@ if __name__=='__main__':
 
         print('Reading Greens functions...\n')
         greens = download_greens_tensors(stations, origin, model)
+        # db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/mdj2/',  format='CPS', model=model)
+        # greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
 #         greens.convolve(wavelet)
         greens_sw = greens.map(process_sw)
 
+        ##resample the data and greens
+        for s in range(len(stations)):
+            data_sw[s] = data_sw[s].resample(1.0)
+            greens_sw[s] = greens_sw[s].resample(1.0)
+
+        stations = data.get_stations()
+        stations = comm.bcast(stations, root=0)
+        data_sw = comm.bcast(data_sw, root=0)
+        greens_sw = comm.bcast(greens_sw, root=0)
+
+        ##estimate the noise strength and covariance matrix
+        data_noise = read(path_data, format='sac', 
+                event_id=event_id,
+                station_id_list=station_id_list,
+                tags=['units:m', 'type:displacement'])
+        for traces in data_noise:
+            traces.resample(1.0)
+        npts_acf_lag = data_sw[0][0].stats.npts
+        noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_model='uncorrelated')
+        noise_std_sw = noise_estimator.get_noise_std()
+        # cov_inv, log_cov_det = noise_estimator.calc_InversionDeterminant_cd()
+        print(noise_std_sw.shape)
+
     else:
         stations = None
         data_sw = None
         greens_sw = None
-
-
-    stations = comm.bcast(stations, root=0)
-    data_sw = comm.bcast(data_sw, root=0)
-    greens_sw = comm.bcast(greens_sw, root=0)
-
-    ##resample the data and greens and estimate the reference noise level
-    data_sw_used, greens_sw_used, noise_std_sw= data_noise_estimate_uncorrelated(data_sw, greens_sw, sampling_rate=1)
-    data_sw_array, greens_sw_array = misfit_preparation(data_sw_used, greens_sw_used)
-    
-  
-    # ##calculate the inverse of covariance matrix, cov_d, for pre-event ambient noise series
-    # cov_inv, log_cov_det = calc_InversionDeterminant_cd(cov_d)
-    #=========================================
-    import matplotlib.pyplot as plt
-    ##Simulate the new 'observatations' with a given explosive-like MT
-    ns,nc,ne,nt = greens_sw_array.shape
-    noise_std_sw = noise_std_sw #2.5 CLVD #5 for 1km#5 iso, 8-clvd. 3 for 30km, 1.5 dc
-    noise_std_sw.tofile('noise_std_sw_sigma.bin')
-    # noise_std_sw = np.ones((ns,nc)) * 1.0e-6
-    #ISO source
-    mt = ned2rtp(np.loadtxt('mt_input.txt'))
-    # DC source
-    # mt = np.array([-8.88783183e+15,  4.66977228e+16, -3.78098910e+16,  \
-    #                3.71126807e+15, 2.09101333e+16,  1.47054371e+16])
-    # mt = np.array([-0.089, 0.467, -0.378,  \
-    #             0.037,  0.209, 0.147]) *1.0e17
-    #CLVD source
-    # mt = ned2rtp(np.array([2.760, -1.661, -1.099, 0.707, 1.048, 0.634])*3.0e16)
-    
-    syn_data = np.einsum('scet,e->sct', greens_sw_array, mt)
-    
-    #generate covariance matrix for exp decay noise model
-    cov_matrix = exponential_covariance(nt,4)
-    mean = np.zeros(nt)
-    
-    fig,ax = plt.subplots(1,3, figsize=(4.5,7), sharex=True, sharey=True)
-    comp_title = ['BHZ','BHR','BHT']
-    max_amp = 1.5*np.max(syn_data)
-    np.random.seed(4000)
-    for s in range(ns):
-        for c in range(nc):
-
-            #generate a correlated data noise series based on the mean and covariance matrix
-            noise = np.random.multivariate_normal(mean, cov_matrix) 
-            noise = bandpass(noise, freqmin=0.025, freqmax=0.0625, df=1.0) 
-            taper(noise, taper_fraction=0.2)
-            d_rms = np.sqrt(np.mean(np.square(noise)))
-            noise = noise/d_rms * noise_std_sw[s,c]
-            # print('sigma of noise: ', np.std(noise, ddof=0))
-            tmp = syn_data[s,c] + noise
-            
-            #plot
-            ax[c].plot(tmp/max_amp+s, 'k',lw=1)
-            ax[c].plot(syn_data[s,c]/max_amp+s, 'r', linestyle='dashed',lw=1)
-            ax[c].plot(noise/max_amp+s-0.3, 'blue',lw=.5)
-            ax[c].set_xticks([0,75,150])
-            ax[c].set_xlabel('Time (s)')
-            ax[c].set_yticks(np.arange(ns))
-            ax[c].set_yticklabels([s.network + '.' + s.station for s in stations])
-            ax[c].set_title(comp_title[c])
-            
-            #replace the data with new syn data
-            data_sw_array[s,c] = tmp
-            data_sw[s].select(channel=comp_title[c])[0].data = tmp
-            data_sw_used[s].select(channel=comp_title[c])[0].data = tmp   
-    plt.savefig('waveform.jpg', bbox_inches='tight', dpi=300)
-    plt.close()
-
-    ##calculate the upper bound of VR
-    res = data_sw_array - syn_data
-    vr = (1 - np.sum(res**2)/np.sum(data_sw_array**2)) * 100
-    print("The upper bound of VR could be %.1f%%" % vr)
-    
-    #=========================================
-
-    ##test shared memory
-    cov_matrix = exponential_covariance(150, 4)
-    cov_d = np.broadcast_to(cov_matrix, (ns, nc, nt, nt))
-    cov_inv, log_cov_det = calc_InversionDeterminant_cd(cov_d)
 
     #    
     # The main computational work starts now
@@ -229,7 +168,8 @@ if __name__=='__main__':
     if comm.rank==0:
         ##
         MAXVAL = 3600
-        ns,nc,ne,nt = greens_sw_array.shape
+        ne, ns, nc = 6, len(stations), 3
+    
         print('Evaluating surface wave misfit...\n')
         np.random.seed(2000)
         ##number of unknowns
@@ -238,7 +178,7 @@ if __name__=='__main__':
         nsteps = 10000
         init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
 
-        print('Important parameters: ne-%d, ns-%s, nc-%d, nt-%d' % (ne, ns, nc, nt))
+        print('Important parameters: ne-%d, ns-%s, nc-%d' % (ne, ns, nc))
         # ## Create the MCMC solver
         solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, \
                           noise_std_sw, max_noise_parameter=10, M00=1.e15, method='mij_uncorrelated')
@@ -252,7 +192,7 @@ if __name__=='__main__':
         print ('Average acceptance rate: %d' % acceptance_rate + '%')
             
         ##write the samples into files
-        solver.save_chains(sampler, file_path='./', thin=10)
+        solver.save_chains(sampler, file_path='./', thin=5)
         
     if comm.rank==0:
 
@@ -270,11 +210,11 @@ if __name__=='__main__':
         best_mt = source_sol.get(0)
         lune_dict = source_sol.get_dict(0)
         greens_sw = shift_greens(greens_sw, tau_sol)
-        plot_data_greens1(event_id+'Mij_waveforms_sw_syn_d%skm_noise_cd.png' % evdp_in_km,
+        plot_data_greens1(event_id+'Mij_waveforms_sw_d%skm_noise_cd.png' % evdp_in_km,
             data_sw, greens_sw, process_sw, 
             misfit_sw, stations, origin, best_mt, lune_dict)
 
-        plot_beachball(event_id+'Mij_beachball_sw_syn_d%skm_noise_cd.png' % evdp_in_km,
+        plot_beachball(event_id+'Mij_beachball_sw_d%skm_noise_cd.png' % evdp_in_km,
             best_mt, stations, origin)
         
         plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'Waveformfit_mean.jpg', evdp_in_km)

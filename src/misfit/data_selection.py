@@ -1,10 +1,10 @@
+import sys
 from mtuq import Dataset
 import numpy as np
 from mtuq.util.math import to_mij, to_rho
 from mtuq.grid.moment_tensor import to_mt
 from mtuq.grid.force import to_force
 from mtuq.grid import UnstructuredGrid
-import sys
 from src.util.math import to_lune, Tashiro2MT6,ned2rtp
 
 MAXVAL=3600
@@ -33,7 +33,6 @@ def data_noise_estimate_uncorrelated(data_sw, greens_sw, sampling_rate=None):
     for s in range(ns):
        for c in range(nc):
            noise_std_sw[s,c] = rms(data_sw_used[s].select(component=components[c])[0].data) 
-           #np.std(data_sw_used[s].select(component=components[c])[0].data, ddof=0) 
    
     return data_sw_used, greens_sw_used, noise_std_sw
 
@@ -88,21 +87,21 @@ def get_solution(emcee_sampler, warm_up_steps, thin, source_type='full'):
             kappa = (m_sol[2] + MAXVAL) / 20           ##0, 360
             sigma = m_sol[3] / 40                      ##-90, 90
             h = (m_sol[4] + MAXVAL) / 7200             ##cos(dip)
-            rho = to_rho((m_sol[5]+MAXVAL)/3600 + 4) ##Mw: 4-6
+            rho = to_rho((m_sol[5]+MAXVAL)/3600 + 4)   ##Mw: 4-6
         elif source_type=='dc':
             v = 0
             w = 0            
             kappa = (m_sol[0] + MAXVAL) / 20           ##0, 360
             sigma = m_sol[1] / 40                      ##-90, 90
             h = (m_sol[2] + MAXVAL) / 7200             ##cos(dip)
-            rho = to_rho((m_sol[3]+MAXVAL)/3600 + 4) ##Mw: 4-6
+            rho = to_rho((m_sol[3]+MAXVAL)/3600 + 4)   ##Mw: 4-6
         elif source_type=='deviatoric':
             v = m_sol[0] / 10800
             w = 0          
             kappa = (m_sol[1] + MAXVAL) / 20           ##0, 360
             sigma = m_sol[2] / 40                      ##-90, 90
             h = (m_sol[3] + MAXVAL) / 7200             ##cos(dip)
-            rho = to_rho((m_sol[4]+MAXVAL)/3600 + 4) ##Mw: 4-6
+            rho = to_rho((m_sol[4]+MAXVAL)/3600 + 4)   ##Mw: 4-6
         elif source_type=='force':
             phi = (m_sol[0]+ MAXVAL) / 20   #[0, 360]
             h = m_sol[1] / 3600             #[-1,1]
