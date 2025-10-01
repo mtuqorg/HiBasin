@@ -36,11 +36,15 @@ def shift_data(data, tau):
     nt = data[0][0].stats.npts
     dt = data[0][0].stats.delta
     omega = 2*np.pi*fftfreq(nt, d=dt)
-    shift = -1 * tau
-    for s in range(ns):
-        data[s][0].data = np.real(ifft(fft(data[s][0].data) * np.exp(-1j*omega*shift[2*s])))
-        data[s][1].data = np.real(ifft(fft(data[s][1].data) * np.exp(-1j*omega*shift[2*s])))
-        data[s][2].data = np.real(ifft(fft(data[s][2].data) * np.exp(-1j*omega*shift[2*s+1])))    
+    shift = tau
+    for s in range(ns): 
+        data_z = data[s].select(component='Z')[0].data 
+        data_r = data[s].select(component='R')[0].data
+        data_t = data[s].select(component='T')[0].data
+
+        data[s].select(component='Z')[0].data = np.real(ifft(fft(data_z) * np.exp(-1j*omega*shift[2*s])))
+        data[s].select(component='R')[0].data = np.real(ifft(fft(data_r) * np.exp(-1j*omega*shift[2*s])))
+        data[s].select(component='T')[0].data = np.real(ifft(fft(data_t) * np.exp(-1j*omega*shift[2*s+1])))
     return data
 
 def shift_greens(greens, tau):

@@ -217,7 +217,7 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
     print('mean mt:', m6_sol)
 
     ##setup colar bar
-    norm = matplotlib.colors.Normalize(vmin=0.85*max(log_prob_2), vmax=max(log_prob_2))
+    norm = matplotlib.colors.Normalize(vmin=0.9*max(log_prob_2), vmax=max(log_prob_2))
     cm = copy.copy( plt.get_cmap('copper').reversed())
     # cm.set_under('black')
     ##########
@@ -235,7 +235,7 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
         PlotLuneFrame(ax1, clvd_left=True, clvd_right=False)
 
         x, y = bm(lon[h_num_samples:], lat[h_num_samples:])
-        ax1.scatter(x, y, s=80, c=log_prob_2[h_num_samples:], edgecolor='none', cmap=cm, norm=norm, alpha=.1)
+        ax1.scatter(x, y, s=80, c=log_prob_2[h_num_samples:], edgecolor='none', cmap=cm, norm=norm, alpha=.2)
 
         x, y = bm(lon_sol, lat_sol)
         ax1.scatter(x, y, s=190, c='red', edgecolor='red', label='Mean MT solution', marker='+')
@@ -246,7 +246,7 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
         PlotLuneFrame(ax2, clvd_left=False, clvd_right=True)
 
         x, y = bm(lon, lat)
-        ax2.scatter(x, y, s=80, c=log_prob_2, edgecolor='none', cmap=cm, norm=norm, alpha=.1)
+        ax2.scatter(x, y, s=80, c=log_prob_2, edgecolor='none', cmap=cm, norm=norm, alpha=.2)
 
         x, y = bm(lon_sol, lat_sol)
         ax2.scatter(x, y, s=190, c='red', edgecolor='red', label='Mean MT solution', marker='+')
@@ -377,7 +377,7 @@ def posterior_distribution_timeshift(flat_samples_fname, mt_degree, thin, statio
     h_num_samples = int(0.5*tau_Ray.shape[0])
 
     mean_tau_Ray = np.mean(tau_Ray[h_num_samples:], axis=0)
-    print('mean tau:', mean_tau_Ray)
+    print('mean tau for Z/R:', mean_tau_Ray)
     labels = ['$\\tau_{%s}$' % s.station for s in stations]
     titles = ['%.2f' % val for val in mean_tau_Ray]
     fig = corner.corner(tau_Ray[h_num_samples:,:], labels=labels, truths = mean_tau_Ray, titles=titles, title_fmt=None, show_titles=True, \
@@ -388,8 +388,8 @@ def posterior_distribution_timeshift(flat_samples_fname, mt_degree, thin, statio
     h_num_samples = int(0.5*tau_Ray.shape[0])
 
     mean_tau_Love = np.mean(tau_Love[h_num_samples:], axis=0)
-    print('mean tau:', mean_tau_Love)
-    titles = ['%.2f' % val for val in mean_tau_Ray]
+    print('mean tau for T:', mean_tau_Love)
+    titles = ['%.2f' % val for val in mean_tau_Love]
     fig = corner.corner(tau_Love[h_num_samples:,:], labels=labels, truths = mean_tau_Love, titles=titles, title_fmt=None, show_titles=True, \
                         truth_color = 'lightcoral',  max_n_ticks=4, labelpad=0.1, label_kwargs={'fontsize':25,'fontweight':'bold'})
     plt.savefig(figure_fname+'_Love.jpg', bbox_inches='tight')

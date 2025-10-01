@@ -12,14 +12,14 @@ def exp_func(x, re):
     return np.exp(-re*x)
 
 class covariace_matrix:
-    def __init__(self, origin, data_noise, npts_acf_lag, noise_length=3600, filter_type='Bandpass', freq_min=0.02, freq_max=0.05, freq=0.05, noise_model='uncorrelated'):
+    def __init__(self, origin, data_noise, npts_acf_lag, noise_length=3600, filter_type='bandpass', freq_min=0.02, freq_max=0.05, freq=0.05, noise_model='uncorrelated'):
         #parameter 'data_noise' has the mtuq Dataset
         self.noise_model = noise_model
         self.npts_acf_lag = npts_acf_lag
 
         ##process the noise using the same way as the data_sw
         for traces in data_noise:
-            ## trim the data based on the origin time
+            ## get the pre-event noise data by triming the data based on the origin time
             traces.trim(origin.time - noise_length, origin.time) 
 
             #copy from Processdata in mtuq to make the noise and signal to be processed in the same way
@@ -31,6 +31,7 @@ class covariace_matrix:
                     trace.filter('bandpass', zerophase=False,
                                 freqmin=freq_min,
                                 freqmax=freq_max)
+                    # print("Bandpass filter applied between %.2f - %.2f Hz" % (freq_min, freq_max))
 
             elif filter_type == 'lowpass':
                 for trace in traces:
