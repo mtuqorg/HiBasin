@@ -44,7 +44,7 @@ if __name__=='__main__':
     path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/*.BH[ZRT].sac')
     path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/weights.dat')
     event_id=     '20130212025751000'
-    model=        'ak135'
+    model=        'mdj2'
 
     #
     # Surface wave measurements will be made separately
@@ -52,11 +52,11 @@ if __name__=='__main__':
         filter_type='Bandpass',
         freq_min=0.02,
         freq_max=0.05,
-        pick_type='taup',
-        taup_model=model,
-        # pick_type='CPS_metadata',
-        # CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/',
-        # CPS_model=model,
+        # pick_type='taup',
+        # taup_model=model,
+        pick_type='CPS_metadata',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/mdj2/',
+        CPS_model=model,
         window_type='surface_wave',
         window_length=250.,
         capuaf_file=path_weights,
@@ -69,8 +69,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-12.,
+        time_shift_max=+12.,
         time_shift_groups=['ZR','T'],
         )
 
@@ -98,9 +98,9 @@ if __name__=='__main__':
         'time': '2013-02-12T02:57:51.272500Z',
         'latitude': 41.2921,
         'longitude': 129.0730,
-        'depth_in_m': 1000.,
+        'depth_in_m': 500.,
         })
-    evdp_in_km = int(origin.depth_in_m/1000)
+    evdp_in_km = origin.depth_in_m/1000
 
     from mpi4py import MPI
     comm = MPI.COMM_WORLD
@@ -125,9 +125,9 @@ if __name__=='__main__':
 
 
         print('Reading Greens functions...\n')
-        greens = download_greens_tensors(stations, origin, model)
-        # db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/mdj2/',  format='CPS', model=model)
-        # greens = db.get_greens_tensors(stations, origin)
+        # greens = download_greens_tensors(stations, origin, model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/mdj2',  format='CPS', model=model)
+        greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
 #         greens.convolve(wavelet)
@@ -135,11 +135,11 @@ if __name__=='__main__':
 
         ##resample the data and greens
         for s in range(len(stations)):
-            data_sw[s] = data_sw[s].resample(1.0)
-            greens_sw[s] = greens_sw[s].resample(1.0)
-
-        for station in stations:
-            station._refresh('delta',1)
+            data_sw[s].resample(1.0)
+            greens_sw[s].resample(1.0)
+            #update the delta in dataset.station
+            data_sw[s].station._refresh('delta',1)
+            greens_sw[s].station._refresh('delta',1)
 
         stations = comm.bcast(stations, root=0)
         data_sw = comm.bcast(data_sw, root=0)
@@ -176,14 +176,14 @@ if __name__=='__main__':
         np.random.seed(2000)
         ##number of unknowns
         ndim = ne + ns + 2*ns
-        nwalker = 600
+        nwalker = 500
         nsteps = 10000
         init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
 
         print('Important parameters: ne-%d, ns-%s, nc-%d' % (ne, ns, nc))
         # ## Create the MCMC solver
         solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, \
-                          noise_std_sw, max_noise_parameter=10, M00=1.e15, method='mij_uncorrelated')
+                          noise_std_sw, max_noise_parameter=10, M00=1.e14, method='mij_uncorrelated')
         sampler, pool = solver.get_sampler('emcee', nchains=nwalker)
         # MCMC sampling
         state = sampler.run_mcmc(init, nsteps, progress=True)
