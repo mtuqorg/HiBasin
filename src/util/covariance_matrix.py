@@ -48,9 +48,10 @@ class covariace_matrix:
                     trace.taper(0.05, type='hann')
                     trace.filter('highpass', zerophase=False,
                                 freq=freq)
-
+            # traces.resample(1)
             tags = traces.tags
             if 'type:velocity' in tags:
+                print("Converting velocity to displacement")
                 # convert to displacement
                 for trace in traces:
                     trace.data = np.cumsum(trace.data)*self.dt
@@ -80,7 +81,7 @@ class covariace_matrix:
         noise_std = np.ones((self.ns, self.nc)) 
         for s in range(self.ns):
             for c in range(self.nc):
-                noise_std[s,c] = np.std(self.data[s,c])
+                noise_std[s,c] = np.std(self.data[s,c],ddof=0)
         return noise_std
     
     def get_acf(self):

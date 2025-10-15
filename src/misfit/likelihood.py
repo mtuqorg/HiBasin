@@ -54,7 +54,7 @@ class MCMC_SOLVER:
         self.time_shift_min = mistfit_sw.time_shift_min
         self.time_shift_max = mistfit_sw.time_shift_max
         self.time_shift_groups = len(mistfit_sw.time_shift_groups)
-        assert  self.time_shift_groups in [1,2,3],\
+        assert  self.time_shift_groups in [1,2],\
                 ValueError("Unsupported number of time shift groups: %d" % len(mistfit_sw.time_shift_groups))
         # Dimensions of the model parameters: ne + ns + ns * shift_group_no (mij, amp, shift)
         self.ndim = self.ne + self.ns + self.ns * self.time_shift_groups
@@ -118,8 +118,11 @@ class MCMC_SOLVER:
         """Apply phase shift in frequency domain."""
         omega_expanded = self.omega[None, None, :]
         shift_expanded = np.zeros((self.ns, self.nc))
-        shift_expanded[:, :2] = shift[::2][:, None]
-        shift_expanded[:, 2] = shift[1::2]
+        if self.time_shift_groups == 1:
+            shift_expanded[:, :] = shift[:, None]
+        else:
+            shift_expanded[:, :2] = shift[::2][:, None]
+            shift_expanded[:, 2] = shift[1::2]
         phase_shift = np.exp(-1j * omega_expanded * shift_expanded[:, :, None])
         return np.real(irfft(pred_fft * phase_shift, axis=-1))
 
@@ -492,8 +495,11 @@ class MCMC_SOLVER:
         ##calculate mean solution of noise and time shifts
         noise_solution = m_sol[self.ne:self.ne+self.ns] * self.noise_scale1 + self.noise_scale2 
         tau_solution = m_sol[self.ne+self.ns: ] * self.time_shift_scale1 + self.time_shift_scale2
-        return source_solution, noise_solution, tau_solution
-    
+        if self.time_shift_groups == 1:
+            return source_solution, noise_solution, np.repeat(tau_solution, 2)
+        else:
+            return source_solution, noise_solution, tau_solution
+        
     def save_chains(self, sampler, file_path='./', thin=1):
         flat_samples_out = sampler.get_chain(discard=0, thin=thin, flat=True)
 
