@@ -367,11 +367,18 @@ def posterior_distribution_timeshift(flat_samples_fname, mt_degree, thin, statio
     ns = len(stations)
     ##read the samples from a .npy file
     tau = np.load(flat_samples_fname)[::thin,mt_degree+ns:]
+    num_tau = tau.shape[1]
 
-    #Rayleigh waves
-    tau_Ray = tau[:,::2] 
-    #Love waves
-    tau_Love = tau[:,1::2] 
+    if num_tau == 2*ns:
+        #Rayleigh waves
+        tau_Ray = tau[:,::2] 
+        #Love waves
+        tau_Love = tau[:,1::2] 
+    elif num_tau == ns:
+        tau_Ray = tau
+        tau_Love = tau
+    else:
+        raise ValueError('wrong number of time shift parameters. It should be ns or 2*ns.')
         
     #Plot time shift for Rayleigh waves
     h_num_samples = int(0.5*tau_Ray.shape[0])

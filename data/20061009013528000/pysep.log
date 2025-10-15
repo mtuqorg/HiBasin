@@ -1,0 +1,73 @@
+[2025-10-15 22:38:10] - pysep - INFO: creating event metadata with user parameters
+[2025-10-15 22:38:10] - pysep - INFO: event info summary - origin time: 2006-10-09T01:35:28.000000Z; lat=41.29; lon=129.11; depth[km]=0.5; magnitude=3.8
+[2025-10-15 22:38:10] - pysep - INFO: full output directory is: /Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20061009013528000
+[2025-10-15 22:38:10] - pysep - INFO: writing config YAML file
+[2025-10-15 22:38:10] - pysep - INFO: querying IRIS for station metadata
+[2025-10-15 22:39:37] - pysep - INFO: creating event metadata with user parameters
+[2025-10-15 22:39:37] - pysep - INFO: creating event metadata with user parameters
+[2025-10-15 22:39:37] - pysep - INFO: event info summary - origin time: 2006-10-09T01:35:28.000000Z; lat=41.29; lon=129.11; depth[km]=0.5; magnitude=3.8
+[2025-10-15 22:39:37] - pysep - INFO: event info summary - origin time: 2006-10-09T01:35:28.000000Z; lat=41.29; lon=129.11; depth[km]=0.5; magnitude=3.8
+[2025-10-15 22:39:37] - pysep - INFO: full output directory is: /Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20061009013528000
+[2025-10-15 22:39:37] - pysep - INFO: full output directory is: /Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20061009013528000
+[2025-10-15 22:39:37] - pysep - INFO: writing config YAML file
+[2025-10-15 22:39:37] - pysep - INFO: writing config YAML file
+[2025-10-15 22:39:37] - pysep - INFO: querying IRIS for station metadata
+[2025-10-15 22:39:37] - pysep - INFO: querying IRIS for station metadata
+[2025-10-15 22:40:02] - pysep - INFO: creating event metadata with user parameters
+[2025-10-15 22:40:02] - pysep - INFO: event info summary - origin time: 2006-10-09T01:35:28.000000Z; lat=41.29; lon=129.11; depth[km]=0.5; magnitude=3.8
+[2025-10-15 22:40:02] - pysep - INFO: full output directory is: /Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20061009013528000
+[2025-10-15 22:40:02] - pysep - INFO: writing config YAML file
+[2025-10-15 22:40:02] - pysep - INFO: querying IRIS for station metadata
+[2025-10-15 22:41:58] - pysep - INFO: collected 701 channels from 149 stations in 4 networks from IRIS
+[2025-10-15 22:42:00] - pysep - INFO: 141 traces outside distance bounds [0, 1300]km
+[2025-10-15 22:42:00] - pysep - INFO: 0 traces outside azimuth bounds [0, 360]deg
+[2025-10-15 22:42:00] - pysep - INFO: querying client 'IRIS' for waveforms
+[2025-10-15 22:42:00] - pysep - INFO: querying 8 lines in bulk client request...
+[2025-10-15 22:43:26] - pysep - INFO: 33 waveforms returned after query
+[2025-10-15 22:43:26] - pysep - INFO: writing stations file
+[2025-10-15 22:43:26] - pysep - INFO: cleaning up channel naming
+[2025-10-15 22:43:35] - pysep - INFO: applying linear detrend to all data
+[2025-10-15 22:43:35] - pysep - INFO: removing response, output units in: DISP
+[2025-10-15 22:43:35] - pysep - INFO: will apply pre-filter: default
+[2025-10-15 22:43:41] - pysep - INFO: applying amplitude scale factor: 1
+[2025-10-15 22:43:41] - pysep - INFO: trimming start and end times on a per-station basis
+[2025-10-15 22:43:41] - pysep - INFO: formatting stream of length 33 for component rotation
+[2025-10-15 22:43:41] - pysep - INFO: stream formatting returned 33 traces
+[2025-10-15 22:43:41] - pysep - INFO: rotating to components ZNE
+[2025-10-15 22:43:44] - pysep - INFO: rotating to components RTZ
+[2025-10-15 22:43:44] - pysep - INFO: writing CAP weight files
+[2025-10-15 22:43:44] - pysep - INFO: writing RTZ waveforms traces in SAC format
+[2025-10-15 22:43:45] - pysep - INFO: plotting source receiver map
+[2025-10-15 22:43:50] - pysep - INFO: starting record section plotter
+[2025-10-15 22:43:50] - pysep - INFO: checking parameter acceptability
+[2025-10-15 22:43:50] - pysep - INFO: getting source-receiver stats
+[2025-10-15 22:43:50] - pysep - INFO: calculating source-receiver distance and (back)azimuths
+[2025-10-15 22:43:50] - pysep - INFO: preprocessing 11 `st` waveforms
+[2025-10-15 22:43:50] - pysep - INFO: applying bandpass filter w/ [0.02, 20]
+[2025-10-15 22:43:50] - pysep - INFO: calculating starttime offsets from event origin time 2006-10-09T01:35:28.000000Z
+[2025-10-15 22:43:50] - pysep - INFO: determining sort order with parameter: distance
+[2025-10-15 22:43:50] - pysep - INFO: determining if any stations/channels should be skipped
+[2025-10-15 22:43:50] - pysep - INFO: criteria check will remove 0/11 traces
+[2025-10-15 22:43:50] - pysep - INFO: determining y-axis positioning for sort: distance
+[2025-10-15 22:43:50] - pysep - INFO: determining amplitude scaling w.r.t st with: 'normalize'
+[2025-10-15 22:43:50] - pysep - INFO: plotting record section for 11 waveforms
+[2025-10-15 22:43:50] - pysep - DEBUG: plotting line check starting from bottom (y=0)
+[2025-10-15 22:43:50] - pysep - DEBUG: 
+IDX	Y		ID	DIST	AZ	BAZ	TSHIFT	TOFFSET	YABSMAX
+[2025-10-15 22:43:50] - pysep - DEBUG: 
+10	0	IU.YSS.00.BHZ	1258.83	 55.39	244.93	0.00	-3599.99	1.02E-07
+5	1	II.ERM.00.BHZ	1171.76	 81.39	270.75	0.00	-3599.96	3.77E-08
+2	2	IC.HIA.00.BHZ	1150.26	323.62	136.94	0.00	-3599.96	9.14E-07
+1	3	IC.BJT.00.BHZ	1102.09	266.92	 78.47	0.00	-3599.98	1.27E-07
+0	4	G.INU..BHZ	955.32	131.06	315.98	0.00	-3599.98	4.92E-08
+9	5	IU.MAJO.10.BHZ	947.54	120.79	306.51	0.00	-3599.99	3.97E-08
+8	6	IU.MAJO.00.BHZ	947.54	120.79	306.51	0.00	-3599.98	3.73E-08
+7	7	IU.INCN.10.BHZ	474.00	207.64	 26.06	0.00	-3599.98	4.46E-08
+6	8	IU.INCN.00.BHZ	474.00	207.64	 26.06	0.00	-3599.99	4.22E-08
+4	9	IC.MDJ.10.BHZ	372.07	  5.94	186.27	0.00	-3599.98	9.77E-08
+3	10	IC.MDJ.00.BHZ	372.07	  5.94	186.27	0.00	-3599.99	3.97E-08
+
+[2025-10-15 22:43:50] - pysep - INFO: placing station labels on y-axis at: y_axis
+[2025-10-15 22:43:50] - pysep - INFO: user requests inverting y-axis with absolute reverse sort
+[2025-10-15 22:43:50] - pysep - INFO: saving figure to ./record_section.png
+[2025-10-15 22:43:51] - pysep - INFO: finished record section in t=0:00:01.085571s

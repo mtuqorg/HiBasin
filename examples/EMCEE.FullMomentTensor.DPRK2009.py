@@ -42,9 +42,9 @@ if __name__=='__main__':
     #   
 
     path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090525005443000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090525005443000/weights_surf.dat')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20090525005443000/weights.dat')
     event_id=     '20090525005443000'
-    model=        'mdj2'
+    model=        'mdj3'
 
     #
     # Surface wave measurements will be made separately
@@ -52,13 +52,12 @@ if __name__=='__main__':
         filter_type='Bandpass',
         freq_min=0.02,
         freq_max=0.05,
-        # pick_type='taup',
-        # taup_model=model,
-        pick_type='user_supplied',#'CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2009/',
+        # pick_type='user_supplied',#'CPS_metadata',
+        pick_type='CPS_metadata',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2009_2d/',
         CPS_model=model,
         window_type='surface_wave',
-        window_length=250,
+        window_length=350,
         capuaf_file=path_weights,
         apply_scaling = False
         )
@@ -121,14 +120,13 @@ if __name__=='__main__':
 
         print('Processing data...\n')
         data_sw = data.map(process_sw)
-        shift = np.zeros(2*len(stations))
-        shift[4] = 35
-        shift[6] = 35
-        data_sw = shift_data(data_sw, shift)
+        # shift = np.zeros(2*len(stations))
+        # shift[4] = 35
+        # shift[6] = 35
+        # data_sw = shift_data(data_sw, shift)
 
         print('Reading Greens functions...\n')
-        # greens = download_greens_tensors(stations, origin, model)
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2009/mdj2',  format='CPS', model=model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2009_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
@@ -152,8 +150,8 @@ if __name__=='__main__':
                 event_id=event_id,
                 station_id_list=station_id_list,
                 tags=['units:m', 'type:displacement'])
-        for traces in data_noise:
-            traces.resample(1.0)
+        # for traces in data_noise:
+        #     traces.resample(1.0)
         npts_acf_lag = data_sw[0][0].stats.npts
         noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=600, noise_model='uncorrelated')
         noise_std_sw = noise_estimator.get_noise_std()
@@ -180,7 +178,7 @@ if __name__=='__main__':
         print('Evaluating surface wave misfit...\n')
         np.random.seed(1000)
         ##number of unknowns
-        ndim = ne + ns + 2*ns
+        ndim = ne + ns + len(misfit_sw.time_shift_groups)*ns
         nwalker = 512
         nsteps = 10000
         init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
