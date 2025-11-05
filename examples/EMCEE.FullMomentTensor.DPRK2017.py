@@ -67,8 +67,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-5.,
+        time_shift_max=+5.,
         time_shift_groups=['ZR','T']
         )
 
@@ -119,10 +119,18 @@ if __name__=='__main__':
 
         print('Processing data...\n')
         data_sw = data.map(process_sw)
-        # shift = np.zeros(2*len(stations))
-        # shift[4] = 35
-        # shift[6] = 35
-        # data_sw = shift_data(data_sw, shift)
+
+        #custom allowable time shift
+        shift = np.zeros(2*len(stations))
+        #Rayleigh
+        shift[::2] = 10
+        # shift[6] = 8
+        # shift[8] = 8
+        #Love
+        shift[1::2] = -2
+        shift[-1] = 8
+        shift[-3] = 5
+        data_sw = shift_data(data_sw, shift)
 
         print('Reading Greens functions...\n')
         db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
@@ -156,7 +164,7 @@ if __name__=='__main__':
         noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=3000, noise_model='uncorrelated')
         noise_std_sw = noise_estimator.get_noise_std()
         # cov_inv, log_cov_det = noise_estimator.calc_InversionDeterminant_cd()
-        print(noise_std_sw.shape)
+        # print(noise_std_sw.shape)
 
     else:
         stations = None
@@ -183,7 +191,7 @@ if __name__=='__main__':
         print('Important parameters: ne-%d, ns-%s, nc-%d' % (ne, ns, nc))
         # ## Create the MCMC solver
         solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, \
-                          noise_std_sw, max_noise_parameter=400, M00=1.0e14, method='mij_uncorrelated')
+                          noise_std_sw, max_noise_parameter=400, M00=1.0e15, method='mij_uncorrelated')
         sampler, pool = solver.get_sampler('emcee', nchains=nwalker)
         # MCMC sampling
         state = sampler.run_mcmc(init, nsteps, progress=True)
@@ -223,7 +231,7 @@ if __name__=='__main__':
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=10, figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2, figure_fname=event_id+"_Posterior_source_parameter.jpg")
         posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
         posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_timeshift')
         print(noise_sol)

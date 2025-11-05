@@ -43,7 +43,7 @@ myfunc = np.vectorize(mt2lune)
 g = Geod(ellps='sphere')
 bm = Basemap(projection='hammer',lon_0=0)
 
-def posterior_distribution_tt2015(source_type, flat_samples, log_prob, thin, figure_fname):
+def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fname, thin, figure_fname):
     MAXVAL = 3600
     if source_type == 'full':
         mt_degree = 6
@@ -54,6 +54,9 @@ def posterior_distribution_tt2015(source_type, flat_samples, log_prob, thin, fig
     else:
         raise ValueError('wrong source type. It should be full, deviatoric or dc.')
     
+    flat_samples = np.load(flat_samples_fname)
+    log_prob = np.load(log_prob_fname)
+
     ##v,w,kappa,sigma, h, rho
     m6_samples = flat_samples[::thin,:mt_degree]
     log_prob_2 = log_prob[::thin] / 1e4
@@ -64,11 +67,11 @@ def posterior_distribution_tt2015(source_type, flat_samples, log_prob, thin, fig
     #convert to lune coordinates
     if mt_degree == 6:
         labels = ['Mw', 'Lune-latitude', 'Lune-longitude', 'Strike', 'Rake', 'Dip']
-        delta, gamma = to_delta_gamma(m6_samples[:, 0]/10800, m6_samples[:,1]* np.pi / 9600)
-        kappa = (m6_samples[:,2]+ MAXVAL) / 20 #strke 0, 360
-        sigma = m6_samples[:,3] / 40 #rake -90,90
-        dip = np.degrees(np.arccos((m6_samples[:,4]+ MAXVAL) / 7200  )) #0-90
-        mw = (m6_samples[:,5]+MAXVAL)/3600 + 4
+        delta, gamma = to_delta_gamma(m6_samples[:, 0], m6_samples[:,1])
+        kappa = m6_samples[:,2]
+        sigma = m6_samples[:,3] 
+        dip = np.degrees(np.arccos(m6_samples[:,4]))
+        mw = to_Mw(m6_samples[:,5])
 
         thin_sol = 10
         m6_sol = np.array([np.mean(delta[h_num_samples::thin_sol]), np.mean(gamma[h_num_samples::thin_sol]), np.mean(kappa[h_num_samples::thin_sol]), np.mean(sigma[h_num_samples::thin_sol]),np.mean(dip[h_num_samples::thin_sol]), np.mean(mw[h_num_samples::thin_sol])])
@@ -77,21 +80,21 @@ def posterior_distribution_tt2015(source_type, flat_samples, log_prob, thin, fig
                                     sigma[:,np.newaxis], dip[:,np.newaxis], mw[:,np.newaxis]), axis=1)
     elif mt_degree==5:#Dev
        labels = ['Mw','Lune_longitude','Strike', 'Rake', 'Dip']
-       delta, gamma = to_delta_gamma(m6_samples[:, 0]/10800, 0*m6_samples[:,0])
-       kappa = (m6_samples[:,1]+ MAXVAL) / 20 #strke 0, 360
-       sigma = m6_samples[:,2] / 40 #rake -90,90
-       dip = np.degrees(np.arccos((m6_samples[:,3]+ MAXVAL) / 7200  )) #0-90
-       mw = (m6_samples[:,4]+MAXVAL)/3600 + 4
+       delta, gamma = to_delta_gamma(m6_samples[:, 0], 0*m6_samples[:,0])
+       kappa = m6_samples[:,1]
+       sigma = m6_samples[:,2] 
+       dip = np.degrees(np.arccos(m6_samples[:,3])) 
+       mw = to_Mw(m6_samples[:,4])
      
        m6_sol = np.array([np.mean(gamma[h_num_samples:]),np.mean(kappa[h_num_samples:]), np.mean(sigma[h_num_samples:]),np.mean(dip[h_num_samples:]), np.mean(mw[h_num_samples:])])
        source_samples = np.concatenate((gamma[:,np.newaxis], kappa[:,np.newaxis], \
                                     sigma[:,np.newaxis], dip[:,np.newaxis], mw[:,np.newaxis]), axis=1)
     elif mt_degree==4:#4 for DC
        labels = ['Mw','Strike', 'Rake', 'Dip']
-       kappa = (m6_samples[:,0]+ MAXVAL) / 20 #strke 0, 360
-       sigma = m6_samples[:,1] / 40 #rake -90,90
-       dip = np.degrees(np.arccos((m6_samples[:,2]+ MAXVAL) / 7200  )) #0-90
-       mw = (m6_samples[:,3]+MAXVAL)/3600 + 4
+       kappa = m6_samples[:,0]
+       sigma = m6_samples[:,1] 
+       dip = np.degrees(np.arccos(m6_samples[:,2]))
+       mw = to_Mw(m6_samples[:,3])
      
        m6_sol = np.array([np.mean(kappa[h_num_samples:]), np.mean(sigma[h_num_samples:]),np.mean(dip[h_num_samples:]), np.mean(mw[h_num_samples:])])
        source_samples = np.concatenate((kappa[:,np.newaxis], \
@@ -263,7 +266,7 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
 
     plt.savefig(figure_fname)
 
-def posterior_distribution_tashiro(source_type, flat_samples, log_prob, thin, figure_fname):
+def posterior_distribution_tashiro(source_type, flat_samples_fname, log_prob_fname, thin, figure_fname):
     MAXVAL = 3600
     if source_type == 'full':
         mt_degree = 6
@@ -272,6 +275,9 @@ def posterior_distribution_tashiro(source_type, flat_samples, log_prob, thin, fi
     else:
         raise ValueError('wrong source type. It should be full or deviatoric.')
     
+    flat_samples = np.load(flat_samples_fname)
+    log_prob = np.load(log_prob_fname)
+
     ##v,w,kappa,sigma, h, rho
     m6_samples = flat_samples[::thin,:mt_degree]
     log_prob_2 = log_prob[::thin] / 1e4
