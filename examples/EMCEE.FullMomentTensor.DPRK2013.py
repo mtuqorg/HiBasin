@@ -42,9 +42,9 @@ if __name__=='__main__':
     #   
 
     path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/weights.dat')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/weights_surf.dat')
     event_id=     '20130212025751000'
-    model=        'mdj2'
+    model=        'mdj3'
 
     #
     # Surface wave measurements will be made separately
@@ -55,10 +55,10 @@ if __name__=='__main__':
         # pick_type='taup',
         # taup_model=model,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013_2d/',
         CPS_model=model,
         window_type='surface_wave',
-        window_length=300,
+        window_length=350,
         capuaf_file=path_weights,
         apply_scaling = False
         )
@@ -69,8 +69,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-5.,
+        time_shift_max=+5.,
         time_shift_groups=['ZR','T'],
         )
 
@@ -121,15 +121,21 @@ if __name__=='__main__':
 
         print('Processing data...\n')
         data_sw = data.map(process_sw)
-        shift = np.zeros(10)
-        shift[2] = 35
-        shift[4] = 35
+
+        #custom allowable time shift
+        shift = np.zeros(2*len(stations))
+        #Rayleigh
+        shift[::2] = 10
+        #Love
+        shift[1::2] = -2
+        shift[-1] = 8
+        shift[-3] = 5
         data_sw = shift_data(data_sw, shift)
 
 
         print('Reading Greens functions...\n')
         # greens = download_greens_tensors(stations, origin, model)
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013/mdj2',  format='CPS', model=model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
@@ -229,9 +235,9 @@ if __name__=='__main__':
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=10, figure_fname="Posterior_source_parameter.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname='Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname='Posterior_timeshift')
+        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2, figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_timeshift')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')
