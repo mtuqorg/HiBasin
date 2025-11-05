@@ -74,10 +74,10 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
         for i_stat in range(ns):
             scale = 0.4 / np.amax(data[i_stat])
             obs_tmp = data[i_stat, i_comp] * scale
-            ax.plot(time, obs_tmp + i_stat, c='k', lw=0.5) 
+            ax.plot(time, obs_tmp + i_stat, c='k', lw=1) 
             #
             pred_tmp = shifted_pred[i_stat, i_comp] * scale
-            ax.plot(time, pred_tmp + i_stat, c=C1, lw=0.5)
+            ax.plot(time, pred_tmp + i_stat, c=C1, lw=1)
 
             obs_tmp2_sum = np.sum(obs_tmp**2)
             diff = obs_tmp - pred_tmp

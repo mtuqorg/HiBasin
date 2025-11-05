@@ -3,6 +3,7 @@ import emcee
 import numpy as np
 from numpy.fft import rfft, irfft, rfftfreq
 import multiprocessing as mp
+from mtuq.util import asarray
 from mtuq.util.math import to_mij, to_rho, to_rtp
 from mtuq.grid.moment_tensor import to_mt
 from mtuq.grid.force import to_force
@@ -36,6 +37,31 @@ class MCMC_SOLVER:
         ## self.obs shape: (ns, nc, nt); self.greens shape: (ns, nc, ne, nt)
         #Note: the greens and mij are in up-south-east convention
         self.obs, self.greens = to_numpy_arrays(data_sw, greens_sw)
+
+        ##debug
+        # from netCDF4 import Dataset
+        # dataset_fname = '/Users/u7091895/Documents/Research/DPRK_data/Data_DPRK2017_velMDJ2_depth500m.nc4'
+        # rootgrp = Dataset(dataset_fname)
+        # # self.obs = np.array(rootgrp.variables['obs_data'][:])        
+        # # gf = np.array(rootgrp.variables['greens_tensor'][:])   
+        # noise_std_sw = np.array(rootgrp.variables['noise_std'][:])  
+        # rootgrp.close()
+        #convert the GF to rtp
+        # for s in range(7):
+        #     self.greens[s,:,0] = gf[2][s]
+        #     self.greens[s,:,1] = gf[0][s]
+        #     self.greens[s,:,2] = gf[1][s]
+        #     self.greens[s,:,3] = gf[4][s]
+        #     self.greens[s,:,4] = -1*gf[5][s]
+        #     self.greens[s,:,5] = -1*gf[3][s]
+            # Mrr=Mzz 2
+            # Mtt=Mxx 0
+            # Mpp=Myy 1
+            # Mrt=Mxz 4
+            # Mrp=-Myz 5
+            # Mtp=-Mxy 3
+        ###
+
         if M00 is not None and method.split("_")[0] in ['mij', 'force', 'mtsf']:
             #scale the greens by M00 only used for mij, force, or joint inversion
             self.M00 = M00
@@ -130,8 +156,11 @@ class MCMC_SOLVER:
         """Full MT Inversion with treatment of uncorrelated data noise and time shifts as free parameters using mij parameterization"""
         if not np.isfinite(self._log_prior(m)): return -np.inf
         
+        #mij in up-south-east
         mij = m[:self.ne]
+        #station-based noise
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
+        #station-based time shift
         shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
 
         # calculate predicted waveforms: d=Gm
@@ -185,7 +214,7 @@ class MCMC_SOLVER:
         ##use the primitive MT in Bayesian sampling
         m[:5] = ( m[:5]+self.MAXVAL) / self.MAXVAL2     #x_i (1-5) ~ (0,1)
         m[5] = (m[5]+self.MAXVAL)/self.MAXVAL + 4       #Mw 4-6
-        mij = ned2rtp(Tashiro2MT6(m[:6]) ) #in up-south-east convention
+        mij = ned2rtp(Tashiro2MT6(m[:6])) #in up-south-east convention
         
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
         shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
@@ -513,6 +542,7 @@ class MCMC_SOLVER:
                                 (self.MAXVAL + flat_samples_out[:,5]) / 3600 + 4 #Mw 4-6
                                 ))
         elif 'tt2015' == source_type: 
+            to_rho_vec = np.vectorize(to_rho)
             if 6 == self.ne:
                 flat_samples_out[:,:self.ne] = np.column_stack((
                                 flat_samples_out[:, 0] / 10800,
@@ -520,7 +550,7 @@ class MCMC_SOLVER:
                                 (flat_samples_out[:, 2] + self.MAXVAL) / 20,
                                 flat_samples_out[:, 3] / 40,
                                 (flat_samples_out[:, 4] + self.MAXVAL) / 7200,
-                                to_rho((flat_samples_out[:, 5] + self.MAXVAL) / 3600 + 4)
+                                to_rho_vec((flat_samples_out[:, 5] + self.MAXVAL) / 3600 + 4)
                                 ))
             elif 5 == self.ne:
                     flat_samples_out[:,:self.ne] = np.column_stack((
@@ -528,7 +558,8 @@ class MCMC_SOLVER:
                                 (flat_samples_out[:, 1] + self.MAXVAL) / 20,
                                 flat_samples_out[:, 2] / 40,
                                 (flat_samples_out[:, 3] + self.MAXVAL) / 7200,
-                                to_rho((flat_samples_out[:, 4] + self.MAXVAL) / 3600 + 4)
+                                # to_rho((flat_samples_out[:, 4] + self.MAXVAL) / 3600 + 4)
+                                to_rho_vec((flat_samples_out[:, 4] + self.MAXVAL) / 3600 + 4)
                                 ))
             elif 4 == self.ne:
                     flat_samples_out[:,:self.ne] = np.column_stack((
@@ -536,7 +567,8 @@ class MCMC_SOLVER:
                                 (flat_samples_out[:, 0] + self.MAXVAL) / 20,
                                 flat_samples_out[:, 1] / 40,
                                 (flat_samples_out[:, 2] + self.MAXVAL) / 7200,
-                                to_rho((flat_samples_out[:, 3] + self.MAXVAL) / 3600 + 4)
+                                # to_rho((flat_samples_out[:, 3] + self.MAXVAL) / 3600 + 4)
+                                to_rho_vec((flat_samples_out[:, 3] + self.MAXVAL) / 3600 + 4)
                                 ))
         elif 'force' == source_type:
             flat_samples_out[:,:self.ne] = np.column_stack((
