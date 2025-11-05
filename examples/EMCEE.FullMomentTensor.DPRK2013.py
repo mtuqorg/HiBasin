@@ -128,7 +128,7 @@ if __name__=='__main__':
         shift[::2] = 10
         #Love
         shift[1::2] = -2
-        shift[-1] = 8
+        shift[-1] = 5
         shift[-3] = 5
         data_sw = shift_data(data_sw, shift)
 
