@@ -13,7 +13,8 @@ from mtuq.process_data import ProcessData
 from mtuq.util import fullpath, merge_dicts, save_json
 from mtuq.util.cap import parse_station_codes, Trapezoid
 
-
+from src.util.misfit_preparation import shift_data
+from src.misfit.misfit_preparation import to_numpy_arrays
 
 if __name__=='__main__':
     #
@@ -70,8 +71,8 @@ if __name__=='__main__':
     
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-5.,
+        time_shift_max=+9.,
         time_shift_groups=['ZR','T']
         )
 
@@ -86,9 +87,8 @@ if __name__=='__main__':
     #
     grid = FullMomentTensorGridSemiregular(
         npts_per_axis=10,
-        magnitudes=[4.1,4.2,4.3,4.4,4.5,4.6,4.5,4.6])
-    wavelet = Trapezoid(
-        magnitude=4.9)
+        magnitudes=[4.2,4.3,4.4,4.5,4.6,4.7,4.8,4.9,5.0])
+    wavelet = Trapezoid(magnitude=4.8)
 
     #
     # Origin time and location will be fixed. For an example in which they 
@@ -129,18 +129,21 @@ if __name__=='__main__':
         print('Processing data...\n')
         data_bw = data.map(process_bw)
         data_sw = data.map(process_sw)
-
+        # ##manually shift the obs
+        t_shift = np.zeros((2*len(stations)))
+        t_shift[-3] = 8
+        data_sw = shift_data(data_sw, t_shift)
 
         print('Reading Greens functions...\n')
         db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2016b_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
-        # greens.convolve(wavelet)
+        greens.convolve(wavelet)
         greens_bw = greens.map(process_bw)
         greens_sw = greens.map(process_sw)
 
-        # ##resample the data and greens
+        # # ##resample the data and greens
         # for s in range(len(stations)):
         #     data_sw[s].resample(1)
         #     greens_sw[s].resample(1)
@@ -179,7 +182,7 @@ if __name__=='__main__':
 
     if comm.rank==0:
 
-        results =  results_sw
+        results =  results_sw 
 
         #
         # Collect information about best-fitting source

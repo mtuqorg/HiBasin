@@ -68,8 +68,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-5.,
-        time_shift_max=+5.,
+        time_shift_min=-10.,
+        time_shift_max=+10.,
         time_shift_groups=['ZR','T'],
         )
 
@@ -83,7 +83,7 @@ if __name__=='__main__':
     # Next, we specify the moment tensor grid and source-time function
     #
     wavelet = Trapezoid(
-        magnitude=4.5)
+        magnitude=4.1)
 
     #
     # Origin time and location will be fixed. For an example in which they 
@@ -121,18 +121,6 @@ if __name__=='__main__':
         print('Processing data...\n')
         data_sw = data.map(process_sw)
 
-        #custom allowable time shift
-        shift = np.zeros(2*len(stations))
-        #Rayleigh
-        shift[::2] = 10
-        # shift[6] = 8
-        # shift[8] = 8
-        #Love
-        shift[1::2] = -2
-        shift[-1] = 8
-        shift[-3] = 5
-        data_sw = shift_data(data_sw, shift)
-
         print('Reading Greens functions...\n')
         db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2009_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
@@ -158,16 +146,14 @@ if __name__=='__main__':
                 event_id=event_id,
                 station_id_list=station_id_list,
                 tags=['units:m', 'type:displacement'])
-        # for traces in data_noise:
-        #     traces.resample(1.0)
+        data_noise.sort_by_distance()
+        for traces in data_noise:
+            traces.resample(1.0)
         npts_acf_lag = data_sw[0][0].stats.npts
         noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=600, noise_model='uncorrelated')
         noise_std_sw = noise_estimator.get_noise_std()
         # cov_inv, log_cov_det = noise_estimator.calc_InversionDeterminant_cd()
         print(noise_std_sw.shape)
-        # for s in range(len(stations)):
-        #     for c in range(3):
-        #         print(max(np.abs(data_sw[s][c].data)))
 
     else:
         stations = None
@@ -234,9 +220,9 @@ if __name__=='__main__':
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2, figure_fname=event_id+"_Posterior_source_parameter.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_timeshift')
+        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2, ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10,  ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')

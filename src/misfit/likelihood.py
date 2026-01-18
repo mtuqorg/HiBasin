@@ -38,30 +38,6 @@ class MCMC_SOLVER:
         #Note: the greens and mij are in up-south-east convention
         self.obs, self.greens = to_numpy_arrays(data_sw, greens_sw)
 
-        ##debug
-        # from netCDF4 import Dataset
-        # dataset_fname = '/Users/u7091895/Documents/Research/DPRK_data/Data_DPRK2017_velMDJ2_depth500m.nc4'
-        # rootgrp = Dataset(dataset_fname)
-        # # self.obs = np.array(rootgrp.variables['obs_data'][:])        
-        # # gf = np.array(rootgrp.variables['greens_tensor'][:])   
-        # noise_std_sw = np.array(rootgrp.variables['noise_std'][:])  
-        # rootgrp.close()
-        #convert the GF to rtp
-        # for s in range(7):
-        #     self.greens[s,:,0] = gf[2][s]
-        #     self.greens[s,:,1] = gf[0][s]
-        #     self.greens[s,:,2] = gf[1][s]
-        #     self.greens[s,:,3] = gf[4][s]
-        #     self.greens[s,:,4] = -1*gf[5][s]
-        #     self.greens[s,:,5] = -1*gf[3][s]
-            # Mrr=Mzz 2
-            # Mtt=Mxx 0
-            # Mpp=Myy 1
-            # Mrt=Mxz 4
-            # Mrp=-Myz 5
-            # Mtp=-Mxy 3
-        ###
-
         if M00 is not None and method.split("_")[0] in ['mij', 'force', 'mtsf']:
             #scale the greens by M00 only used for mij, force, or joint inversion
             self.M00 = M00
@@ -174,6 +150,8 @@ class MCMC_SOLVER:
         res = (self.obs - pred) / noise_amp[:, :, None]
         lp1 = np.sum(res ** 2)
         lp2 = np.sum(self.nt * 2 * np.log(noise_amp))
+        # lp1 = np.sum(res[:,:2,:] ** 2)
+        # lp2 = np.sum(self.nt * 2 * np.log(noise_amp[:,:2]))
         return -0.5 * (lp1 + lp2)
 
     def _log_prob_full_tt2015_uncorrelated(self, m):
