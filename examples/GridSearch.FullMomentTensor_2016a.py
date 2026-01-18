@@ -70,8 +70,8 @@ if __name__=='__main__':
     
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-12.,
+        time_shift_max=+7.,
         time_shift_groups=['ZR','T']
         )
 
@@ -139,14 +139,6 @@ if __name__=='__main__':
         # greens.convolve(wavelet)
         greens_bw = greens.map(process_bw)
         greens_sw = greens.map(process_sw)
-
-        # ##resample the data and greens
-        # for s in range(len(stations)):
-        #     data_sw[s].resample(1)
-        #     greens_sw[s].resample(1)
-        #     #update the delta in dataset.station
-        #     data_sw[s].station._refresh('delta',1)
-        #     greens_sw[s].station._refresh('delta',1)
 
     else:
         stations = None

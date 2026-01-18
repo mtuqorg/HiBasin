@@ -43,7 +43,7 @@ myfunc = np.vectorize(mt2lune)
 g = Geod(ellps='sphere')
 bm = Basemap(projection='hammer',lon_0=0)
 
-def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fname, thin, figure_fname):
+def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fname, thin, ratio, figure_fname):
     MAXVAL = 3600
     if source_type == 'full':
         mt_degree = 6
@@ -61,7 +61,7 @@ def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fnam
     m6_samples = flat_samples[::thin,:mt_degree]
     log_prob_2 = log_prob[::thin] / 1e4
     num_samples = len(log_prob_2)
-    h_num_samples = int(0.5*num_samples)
+    h_num_samples = int(ratio*num_samples)
     print("number of samples %s and half number is %s " % (num_samples, h_num_samples))
     
     #convert to lune coordinates
@@ -183,7 +183,7 @@ def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fnam
 
     plt.savefig(figure_fname)
     
-def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, thin, figure_fname):
+def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, thin, ratio, figure_fname):
     ##read the samples and log_likelihood from two .npy files 
     flat_samples = np.load(flat_samples_fname)
     log_prob = np.load(log_prob_fname)
@@ -199,7 +199,7 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
     m6_samples = flat_samples[::thin,:mt_degree]
     log_prob_2 = log_prob[::thin] / 1e4
     num_samples = len(log_prob_2)
-    h_num_samples = int(0.5*num_samples)
+    h_num_samples = int(ratio*num_samples)
     print("number of samples %s and half number is %s " % (num_samples, h_num_samples))
     
     #convert to lune coordinates
@@ -266,7 +266,7 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
 
     plt.savefig(figure_fname)
 
-def posterior_distribution_tashiro(source_type, flat_samples_fname, log_prob_fname, thin, figure_fname):
+def posterior_distribution_tashiro(source_type, flat_samples_fname, log_prob_fname, thin, ratio, figure_fname):
     MAXVAL = 3600
     if source_type == 'full':
         mt_degree = 6
@@ -282,7 +282,7 @@ def posterior_distribution_tashiro(source_type, flat_samples_fname, log_prob_fna
     m6_samples = flat_samples[::thin,:mt_degree]
     log_prob_2 = log_prob[::thin] / 1e4
     num_samples = len(log_prob_2)
-    h_num_samples = int(0.5*num_samples)
+    h_num_samples = int(ratio*num_samples)
     print("number of samples %s and half number is %s " % (num_samples, h_num_samples))
     
     #convert to lune coordinates
@@ -349,14 +349,14 @@ def posterior_distribution_tashiro(source_type, flat_samples_fname, log_prob_fna
 
     plt.savefig(figure_fname)
     
-def posterior_distribution_noise(flat_samples_fname, mt_degree, thin, stations, figure_fname):
+def posterior_distribution_noise(flat_samples_fname, mt_degree, thin, ratio, stations, figure_fname):
     rcParams["font.size"] = 20    
 
     ns = len(stations)
     ##read the samples from a .npy file
     noise = np.load(flat_samples_fname)[::thin,mt_degree:mt_degree+ns]
     
-    h_num_samples = int(0.5*noise.shape[0])
+    h_num_samples = int(ratio*noise.shape[0])
 
     mean_noise = np.mean(noise[h_num_samples:], axis=0)
     print('mean noise:', mean_noise)
@@ -367,7 +367,7 @@ def posterior_distribution_noise(flat_samples_fname, mt_degree, thin, stations, 
 
     plt.savefig(figure_fname, bbox_inches='tight')
     
-def posterior_distribution_timeshift(flat_samples_fname, mt_degree, thin, stations, figure_fname):
+def posterior_distribution_timeshift(flat_samples_fname, mt_degree, thin, ratio, stations, figure_fname):
     rcParams["font.size"] = 20
     
     ns = len(stations)
@@ -387,7 +387,7 @@ def posterior_distribution_timeshift(flat_samples_fname, mt_degree, thin, statio
         raise ValueError('wrong number of time shift parameters. It should be ns or 2*ns.')
         
     #Plot time shift for Rayleigh waves
-    h_num_samples = int(0.5*tau_Ray.shape[0])
+    h_num_samples = int(ratio*tau_Ray.shape[0])
 
     mean_tau_Ray = np.mean(tau_Ray[h_num_samples:], axis=0)
     print('mean tau for Z/R:', mean_tau_Ray)

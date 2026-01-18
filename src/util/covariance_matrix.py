@@ -13,6 +13,7 @@ def exp_func(x, re):
 
 class covariace_matrix:
     def __init__(self, origin, data_noise, npts_acf_lag, noise_length=3600, filter_type='bandpass', freq_min=0.02, freq_max=0.05, freq=0.05, noise_model='uncorrelated'):
+        '''noise_model: uncorrelated, exponential, empirical'''
         #parameter 'data_noise' has the mtuq Dataset
         self.noise_model = noise_model
         self.npts_acf_lag = npts_acf_lag
@@ -21,6 +22,7 @@ class covariace_matrix:
         for traces in data_noise:
             ## get the pre-event noise data by triming the data based on the origin time
             traces.trim(origin.time - noise_length, origin.time) 
+            # traces.trim(origin.time +1000, origin.time +1000 + noise_length) #Test for DPRK2016 tests because the pre-event data is noisy. 
 
             #copy from Processdata in mtuq to make the noise and signal to be processed in the same way
             if filter_type == 'bandpass':
@@ -91,15 +93,15 @@ class covariace_matrix:
                 acf[s,c] = self._get_acf(self.data[s,c])
         return acf
     
-    def calc_exponential_cd(length, scale=10):
+    def calc_exponential_cd(self, scale=10):
         '''
         Generate the covariance matrix for exponential decay noise model
         '''
-        x = np.arange(length)
+        x = np.arange(self.npts_acf_lag)
         cov_matrix = np.exp(-np.abs(x[:, None] - x[None, :]) / scale)
         return cov_matrix
     
-    def calc_empirical_cd(acf):
+    def calc_empirical_cd(self, acf):
         '''
         Generate the covariance matrix for empirical noise model
         '''
@@ -116,8 +118,8 @@ class covariace_matrix:
             for s in range(self.ns):
                 for c in range(self.nc):
                     re, _ = curve_fit(exp_func, time, acf[s,c])
-                    cov_d[s, c] = self.calc_exponential_cd(self.npts_acf_lag, re)
-
+                    cov_d[s, c] = self.calc_exponential_cd(re[0])
+            
             return cov_d
         elif self.noise_model == 'empirical':
             ## Calculate the covariance matrix for empirical noise model
@@ -152,19 +154,40 @@ class covariace_matrix:
                 log_cov_det[ist,ic] = factor
         return cov_inv, log_cov_det
 
-    # def plot_noise_series(self):
-    #     time_ax = np.arange(self.nt) * self.dt
-    #     fig, axs = plt.subplots(self.nc, self.ns, sharex=True, sharey = True, figsize = (10,4))
-    #     for ist in range(self.ns):
-    #         for ic in range(self.nc):
-    #             axs[ic,ist].plot(time_ax, self.data[ist,ic]) #ns . nc . nt
-    #             axs[0,ist].set_title(self.stations[ist].split('.')[1],fontsize=9)
-    #             axs[-1,ist].set_xlabel('Time (s)')
-    #             axs[ic,0].set_ylabel(self.components[ic])
-    #     plt.tight_layout()
-    #     plt.savefig('noise_series_plots.jpg', dpi=300)
-    #     plt.close()
+    def plot_noise_series(self):
+        time_ax = np.arange(self.nt) * self.dt
+        fig, axs = plt.subplots(self.nc, self.ns, sharex= True, sharey = True, figsize = (10,4))
+        for ist in range(self.ns):
+            for ic in range(self.nc):
+                axs[ic,ist].plot(time_ax, self.data[ist,ic], lw=0.5) #ns . nc . nt
+                axs[0,ist].set_title(self.stations[ist].network + '.' + self.stations[ist].station,fontsize=9)
+                axs[-1,ist].set_xlabel('Time (s)')
+                axs[ic,0].set_ylabel(self.components[ic])
+        plt.tight_layout()
+        plt.savefig('noise_series.png', dpi=300)
+        plt.close()
 
+    def plot_auto_corr_func(self):
+        acf = self.get_acf()[:,:,:self.npts_acf_lag]
+        time_ax = np.arange(self.npts_acf_lag) * self.dt
+
+        fig,axes = plt.subplots(3,1, sharex=True, figsize=(7,5))
+        for ist in range(self.ns):
+            for ic in range(self.nc):
+                axes[ic].plot( time_ax, acf[ist,ic] )
+                axes[ic].set_ylim([-1,1])
+                axes[ic].set_xlim([min(time_ax),max(time_ax)])
+                
+                axes[ic].text(10,0.75,self.components[ic])
+
+            axes[2].set_xlabel('Lag (samples)',fontsize = 12)
+            axes[1].set_ylabel('Autocorrelation', fontsize = 12)
+            axes[2].legend([s.network + '.' + s.station for s in self.stations],loc = 'lower right', ncol=3, fontsize = 9)
+
+        #plot the zeros
+        for i in range(3):
+            axes[i].plot(time_ax, np.zeros(self.npts_acf_lag),'--', color = 'gray', linewidth = 1)
+        plt.savefig('acf.png', dpi = 300, bbox_inches = 'tight')
 
 
 

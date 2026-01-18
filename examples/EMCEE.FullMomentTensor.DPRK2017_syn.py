@@ -130,10 +130,6 @@ if __name__=='__main__':
 
         print('Processing data...\n')
         data_sw = data.map(process_sw)
-        # shift = np.zeros(2*len(stations))
-        # shift[4] = 35
-        # shift[6] = 35
-        # data_sw = shift_data(data_sw, shift)
 
         print('Reading Greens functions...\n')
         db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
@@ -143,13 +139,13 @@ if __name__=='__main__':
 #         greens.convolve(wavelet)
         greens_sw = greens.map(process_sw)
 
-        ##resample the data and greens
-        for s in range(len(stations)):
-            data_sw[s].resample(1)
-            greens_sw[s].resample(1)
-            #update the delta in dataset.station
-            data_sw[s].station._refresh('delta',1)
-            greens_sw[s].station._refresh('delta',1)
+        ##resample t and greens
+        # for s in range(len(stations)):
+        #     data_sw[s].resample(1)
+        #     greens_sw[s].resample(1)
+        #     #update the delta in dataset.station
+        #     data_sw[s].station._refresh('delta',1)
+        #     greens_sw[s].station._refresh('delta',1)
 
         stations = comm.bcast(stations, root=0)
         data_sw = comm.bcast(data_sw, root=0)
@@ -160,8 +156,8 @@ if __name__=='__main__':
                 event_id=event_id,
                 station_id_list=station_id_list,
                 tags=['units:m', 'type:displacement'])
-        for traces in data_noise:
-            traces.resample(1)
+        # for traces in data_noise:
+        #     traces.resample(1)
         npts_acf_lag = data_sw[0][0].stats.npts
         noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=3000, noise_model='uncorrelated')
         noise_std_sw = noise_estimator.get_noise_std()
@@ -178,6 +174,10 @@ if __name__=='__main__':
     ##Simulate the new 'observatations' with a given explosive-like MT
     data_sw_array, greens_sw_array = to_numpy_arrays(data_sw, greens_sw)
     ns,nc,ne,nt = greens_sw_array.shape
+    print(greens_sw_array.shape)
+    np.save('obs_2017', data_sw_array)
+    np.save('gf_2017', greens_sw_array)
+
     #ISO source
     mt = ned2rtp(np.loadtxt('../tests/mt_input.txt'))
     syn_data = np.einsum('scet,e->sct', greens_sw_array, mt)
@@ -280,9 +280,9 @@ if __name__=='__main__':
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=10, figure_fname=event_id+"_Posterior_source_parameter.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, stations=stations, figure_fname=event_id+'_Posterior_timeshift')
+        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=10, ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_timeshift')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')

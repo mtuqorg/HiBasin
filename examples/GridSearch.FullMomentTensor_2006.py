@@ -53,7 +53,7 @@ if __name__=='__main__':
         CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2006_2d/',
         CPS_model=model,
         window_type='surface_wave',
-        window_length=350,
+        window_length=400,
         capuaf_file=path_weights
         )
     
@@ -70,8 +70,8 @@ if __name__=='__main__':
     
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-5.,
+        time_shift_max=+5.,
         time_shift_groups=['ZR','T']
         )
 

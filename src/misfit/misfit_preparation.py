@@ -15,7 +15,7 @@ def to_numpy_arrays(mtuq_data, mtuq_greens):
     # nt, dt = level2._get_time_sampling(mtuq_data)
     stations = level2._get_stations(mtuq_data)
     components = level2._get_components(mtuq_data)
-
+    
     # collapse main structures into NumPy arrays
     data = level2._get_data(mtuq_data, stations, components)       #ns x nc x nt
     greens = level2._get_greens(mtuq_greens, stations, components) #ns x nc x ne x nt in up-south-east convention

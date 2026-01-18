@@ -34,13 +34,13 @@ if __name__=='__main__':
     #
     process_bw = ProcessData(
         filter_type='Bandpass',
-        freq_min= 0.05,
-        freq_max= 0.1,
+        freq_min= 0.1,
+        freq_max= 0.333,
         pick_type='CPS_metadata',
         CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/',
         CPS_model=model,
         window_type='body_wave',
-        window_length=30.,
+        window_length=20.,
         capuaf_file=path_weights,
         )
     #
@@ -63,8 +63,8 @@ if __name__=='__main__':
     #
     misfit_bw = Misfit(
         norm='L2',
-        time_shift_min=-2.,
-        time_shift_max=+2.,
+        time_shift_min=-3.,
+        time_shift_max=+3.,
         time_shift_groups=['ZR'],
         )
     
@@ -86,9 +86,9 @@ if __name__=='__main__':
     #
     grid = FullMomentTensorGridSemiregular(
         npts_per_axis=10,
-        magnitudes=[4.8, 4.9, 5.0, 5.1, 5.2, 5.3])
+        magnitudes=[4.9, 5.0, 5.1, 5.2, 5.3, 5.4,5.5, 5.6,5.7,5.8])
     wavelet = Trapezoid(
-        magnitude=4.9)
+        magnitude=5.1)
 
     #
     # Origin time and location will be fixed. For an example in which they 
@@ -130,13 +130,12 @@ if __name__=='__main__':
         data_bw = data.map(process_bw)
         data_sw = data.map(process_sw)
 
-
         print('Reading Greens functions...\n')
         db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
-        # greens.convolve(wavelet)
+        greens.convolve(wavelet)
         greens_bw = greens.map(process_bw)
         greens_sw = greens.map(process_sw)
 
@@ -179,7 +178,7 @@ if __name__=='__main__':
 
     if comm.rank==0:
 
-        results =  results_sw
+        results =  results_sw 
 
         #
         # Collect information about best-fitting source

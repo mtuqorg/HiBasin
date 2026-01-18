@@ -248,6 +248,7 @@ def generate_CPS_greens_tensor_2D(origin, stations, path_to_earth_model, dt=0.5,
         system('hprep96 -M %s -d %s_dfile -HS %s -HR 0.0 -EQEX -R' % (mod_fname, s.station, origin.depth_in_m/1e3))
         system('hspec96 > hspec96.out')
         system('hpulse96 -D -p -l 1  > hpulse96.out')
+        #system('hpulse96 -D -i  > hpulse96.out')
     
         ## change the name to station
         system('cat hpulse96.out | fsel96 -NS 1 > %s_elemGF.f96' % s.station)
