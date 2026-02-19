@@ -1,4 +1,6 @@
 import os 
+import matplotlib
+import copy
 import numpy as np
 from scipy.linalg import toeplitz
 import matplotlib.pyplot as plt
@@ -127,6 +129,7 @@ class covariace_matrix:
             for s in range(self.ns):
                 for c in range(self.nc):
                     cov_d[s, c] = self.calc_empirical_cd(acf[s, c, :self.npts_acf_lag])
+            np.save('covd_emp', cov_d)
             return cov_d
         else:
             raise ValueError(f"Unknown noise model: {self.noise_model}")
@@ -188,6 +191,52 @@ class covariace_matrix:
         for i in range(3):
             axes[i].plot(time_ax, np.zeros(self.npts_acf_lag),'--', color = 'gray', linewidth = 1)
         plt.savefig('acf.png', dpi = 300, bbox_inches = 'tight')
+
+    def plot_data_covariance_matrix(self, figname, sigma_in=None):
+        covd = self.get_covariance_matrix()
+        ns,nc,nt,_ = covd.shape
+
+        if sigma_in is not None:        
+            sigma = sigma_in**2 * 1.0e12
+            vmin = np.min(sigma) 
+            vmax = np.max(sigma)
+        else:
+            sigma = np.ones((ns,nc))
+            vmin = -1
+            vmax = 1
+    
+        ##plot the covariance matrix for all components of all stations
+        fig,axes = plt.subplots(nc,ns, sharex=True, sharey=True, figsize=(9,2.5), subplot_kw={'xticks': [0,150,300], 'yticks': [0,150,300]})
+        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+        # cm = copy.copy( plt.get_cmap('copper').reversed())
+        cm = plt.get_cmap('jet')
+        for ist in range(ns):
+            for ic in range(nc):
+                cov_i = covd[ist,ic] * sigma[ist,ic] 
+                im = axes[ic,ist].imshow(cov_i, vmin=vmin, vmax=vmax, cmap =cm)
+                if ist == 0 and ic == 1:
+                    axes[ic,ist].set_ylabel('Time (s)')
+                if ist == int(ns/2):
+                    axes[ic,ist].set_xlabel('Time (s)')
+
+                axes[0,ist].set_title(self.stations[ist].network + '.' + self.stations[ist].station,fontsize=9)
+                axes[ic,ist].set_xlim([0,nt])
+                axes[ic,ist].set_ylim([0,nt])
+                plt.gca().invert_yaxis()
+           
+        axes[0,0].annotate('Z', xy=(0.25, 0.75), xycoords='axes fraction', ha='right')
+        axes[1,0].annotate('R', xy=(0.25, 0.75), xycoords='axes fraction', ha='right')
+        axes[2,0].annotate('T', xy=(0.25, 0.75), xycoords='axes fraction', ha='right')
+            
+        plt.subplots_adjust(bottom=0.1, right=0.8, top=0.9)
+        cax = plt.axes([0.81, 0.1, 0.02, 0.8])
+        cb = matplotlib.colorbar.ColorbarBase(cax, cmap=cm, norm=norm)
+        if sigma_in is not None:  
+            cb.set_label(label='Covariance amplitude ($10^{12}$)',fontsize=10)
+        else:
+            cb.set_label(label='Covariance amplitude',fontsize=10)
+        #plt.colorbar(im, cax=cax, ax = axes[-1,-1])
+        plt.savefig(figname, dpi = 300, bbox_inches = 'tight')
 
 
 
