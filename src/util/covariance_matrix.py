@@ -100,7 +100,7 @@ class covariace_matrix:
         Generate the covariance matrix for exponential decay noise model
         '''
         x = np.arange(self.npts_acf_lag)
-        cov_matrix = np.exp(-np.abs(x[:, None] - x[None, :]) / scale)
+        cov_matrix = np.exp(-np.abs(x[:, None] - x[None, :]) * scale)
         return cov_matrix
     
     def calc_empirical_cd(self, acf):
@@ -129,7 +129,7 @@ class covariace_matrix:
             for s in range(self.ns):
                 for c in range(self.nc):
                     cov_d[s, c] = self.calc_empirical_cd(acf[s, c, :self.npts_acf_lag])
-            np.save('covd_emp', cov_d)
+          
             return cov_d
         else:
             raise ValueError(f"Unknown noise model: {self.noise_model}")
