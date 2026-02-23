@@ -41,8 +41,8 @@ if __name__=='__main__':
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20170903033001000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20170903033001000/weights_surf.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20170903033001000/*.BH[ZRT].sac')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20170903033001000/weights_surf.dat')
     event_id=     '20170903033001000'
     model=        'mdj3'
 
@@ -53,7 +53,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2017_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -67,8 +67,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-5,#10.,
-        time_shift_max=+10.,
+        time_shift_min=-13,
+        time_shift_max=+13.,
         time_shift_groups=['ZR','T']
         )
 
@@ -119,13 +119,13 @@ if __name__=='__main__':
 
         print('Processing data...\n')
         data_sw = data.map(process_sw)
-        # ##manually shift the obs
+        # ##manually shift the T component of BJT
         # t_shift = np.zeros((2*len(stations)))
         # t_shift[-3] = 8
         # data_sw = shift_data(data_sw, t_shift)
 
         print('Reading Greens functions...\n')
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
