@@ -1,6 +1,7 @@
 import os 
 import emcee 
 import numpy as np
+import numpy.ma as ma
 from numpy.fft import rfft, irfft, rfftfreq
 import multiprocessing as mp
 from mtuq.util import asarray
@@ -36,8 +37,8 @@ class MCMC_SOLVER:
         # Extract data attributes
         ## self.obs shape: (ns, nc, nt); self.greens shape: (ns, nc, ne, nt)
         #Note: the greens and mij are in up-south-east convention
-        self.obs, self.greens = to_numpy_arrays(data_sw, greens_sw)
-
+        self.obs, self.greens, self.weight_mask = to_numpy_arrays(data_sw, greens_sw)
+        
         if M00 is not None and method.split("_")[0] in ['mij', 'force', 'mtsf']:
             #scale the greens by M00 only used for mij, force, or joint inversion
             self.M00 = M00
@@ -148,10 +149,14 @@ class MCMC_SOLVER:
         # noise weighted residuals
         noise_amp = self.noise_std * amp[:, None]
         res = (self.obs - pred) / noise_amp[:, :, None]
+
+        #mask the components with zero weight
+        res = ma.masked_array(res, np.broadcast_to(self.weight_mask[:,:,None], res.shape))
+        noise_amp = ma.masked_array(noise_amp, self.weight_mask)
+
         lp1 = np.sum(res ** 2)
         lp2 = np.sum(self.nt * 2 * np.log(noise_amp))
-        # lp1 = np.sum(res[:,:2,:] ** 2)
-        # lp2 = np.sum(self.nt * 2 * np.log(noise_amp[:,:2]))
+
         return -0.5 * (lp1 + lp2)
 
     def _log_prob_full_tt2015_uncorrelated(self, m):
@@ -181,6 +186,11 @@ class MCMC_SOLVER:
         # noise weighted residuals
         noise_amp = self.noise_std * amp[:, None]
         res = (self.obs - pred) / noise_amp[:, :, None]
+
+        #mask the components with zero weight
+        res = ma.masked_array(res, np.broadcast_to(self.weight_mask[:,:,None], res.shape))
+        noise_amp = ma.masked_array(noise_amp, self.weight_mask)
+
         lp1 = np.sum(res ** 2)
         lp2 = np.sum(self.nt * 2 * np.log(noise_amp))
         return -0.5 * (lp1 + lp2)
@@ -206,6 +216,11 @@ class MCMC_SOLVER:
         # noise weighted residuals
         noise_amp = self.noise_std * amp[:, None]
         res = (self.obs - pred) / noise_amp[:, :, None]
+
+        #mask the components with zero weight
+        res = ma.masked_array(res, np.broadcast_to(self.weight_mask[:,:,None], res.shape))
+        noise_amp = ma.masked_array(noise_amp, self.weight_mask)
+        
         lp1 = np.sum(res ** 2)
         lp2 = np.sum(self.nt * 2 * np.log(noise_amp))
         return -0.5 * (lp1 + lp2)

@@ -12,15 +12,25 @@ def to_numpy_arrays(mtuq_data, mtuq_greens):
     """
     #
     # collect metadata
-    # nt, dt = level2._get_time_sampling(mtuq_data)
     stations = level2._get_stations(mtuq_data)
     components = level2._get_components(mtuq_data)
+
+    ns = len(stations)
+    nc = len(components)
     
     # collapse main structures into NumPy arrays
     data = level2._get_data(mtuq_data, stations, components)       #ns x nc x nt
     greens = level2._get_greens(mtuq_greens, stations, components) #ns x nc x ne x nt in up-south-east convention
     #
-    return data, greens
+    #mask the components during log_likelihood: 0-use, 1-no use
+    weight_mask = np.zeros((ns, nc))
+    for _i in range(ns):
+        for _j in range(nc):
+            # mask this component if all elements are zeros
+            if not np.any(data[_i, _j]):
+                weight_mask[_i, _j] = 1
+
+    return data, greens, weight_mask
 
 def shift_data(data, tau):
     ns = len(data)
