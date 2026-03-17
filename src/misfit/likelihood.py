@@ -220,7 +220,7 @@ class MCMC_SOLVER:
         #mask the components with zero weight
         res = ma.masked_array(res, np.broadcast_to(self.weight_mask[:,:,None], res.shape))
         noise_amp = ma.masked_array(noise_amp, self.weight_mask)
-        
+
         lp1 = np.sum(res ** 2)
         lp2 = np.sum(self.nt * 2 * np.log(noise_amp))
         return -0.5 * (lp1 + lp2)
