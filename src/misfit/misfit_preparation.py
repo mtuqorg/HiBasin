@@ -5,6 +5,27 @@ from mtuq.util.signal import get_components, get_time_sampling
 from mtuq.misfit.waveform import level2 as level2
 from numpy.fft import fft, ifft, fftfreq
 
+def get_timeshift_mask(component_mask, timeshift_group=2):
+    '''
+    component_mask: ns x nc array where ns - number of stations, nc - number of component
+                    element 0 - keep, 1 - drop
+    timeshift_group: 1 - three components share 1 timeshift, or 2 - V/R and T components have own timeshift.
+    shift_mask: flatten 1D array: 2 x ns. e.g., [False, True, True, ...]
+    ''' 
+    ns = component_mask.shape[0]
+    timeshift_mask = []
+    for i in range(ns):
+        if timeshift_group == 1:
+            timeshift_mask.append(True)
+        elif timeshift_group == 2:
+            timeshift_mask.append(np.any(component_mask[i,:2]==0))
+            timeshift_mask.append(np.any(component_mask[i,2]==0))
+        else:
+            ValueError('Wrong timeshift_group.')
+
+    #return the mask for likelihood calculation: True - need timeshift, False - no need timeshift
+    return timeshift_mask
+
 ##this function copy most definition of level2.py in mtuq
 def to_numpy_arrays(mtuq_data, mtuq_greens):
     """

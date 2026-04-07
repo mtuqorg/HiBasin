@@ -14,6 +14,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 from mpl_toolkits.basemap import Basemap
 import numpy as np
+import numpy.ma as ma
 import corner
 import emcee
 from netCDF4 import Dataset
@@ -39,13 +40,19 @@ from mtuq.event import MomentTensor as MT_mtuq
 import sys
 from src.util.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned
 
-def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname, evdp_in_km=33):
+def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname, delta=1, evdp_in_km=33):
     ns,nc,ne,nt = greens.shape
     print(data.shape, greens.shape)
     ###
 
+    ##calculate the weight_mask
+    weight_mask = np.zeros((ns,nc))
+    for i in range(ns):
+        for j in range(nc):
+            if not np.any(data[i, j]):
+                weight_mask[i, j] = 1
+
     pred = np.einsum('scet,e->sct', greens, mij_sol)
-    delta =1
 
     omega = 2*np.pi * rfftfreq(nt, d=delta)
     shifted_pred = np.zeros(pred.shape)
@@ -72,6 +79,12 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
         ax = fig.add_subplot(gs1[i_comp], frameon=False)
 
         for i_stat in range(ns):
+            if weight_mask[i_stat, i_comp] == 1: 
+                if i_comp == 0:
+                    ax.text( x = 0, y = i_stat - .5, s = '$\\tau$1=%.2f,$\\tau$2=%.2f, k=%.1f' % \
+                           (tau[2*i_stat], tau[2*i_stat+1], noise[i_stat]), c='black', fontsize=9)                
+                continue
+
             scale = 0.4 / np.amax(data[i_stat])
             obs_tmp = data[i_stat, i_comp] * scale
             ax.plot(time, obs_tmp + i_stat, c='k', lw=1) 
@@ -116,17 +129,19 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
         alpha=1, edgecolor = C0, color_t=C0, linewidth=1.0)
 
     beachball.plot_beachball_mpl( mt.m6(), ax_dev, beachball_type='dc',\
-        size=8*mw, position=(0.5,.5),\
+        size=8*mw, position=(0.5, 0.5),\
         alpha=1, edgecolor = 'r', color_t='none', color_p='none', linewidth=1.0)
 
     ax_dev.set_xlim(0, 2.0)
     ax_dev.set_ylim(0, 1.0)
-    ax_dev.text(0.1,0.98,s='The MT solution', fontsize=10)
+    ax_dev.text(0.1, 0.98, s='The MT solution', fontsize=10)
     ax_dev.annotate('a)', xy=(0, 0.98), xycoords='axes fraction', ha='right', fontweight='bold', fontsize=12)
 
     ##
-    obs_data2_sum = np.sum(data**2)
     diff = data - shifted_pred
+    diff = ma.masked_array(diff, np.broadcast_to(weight_mask[:,:,None], diff.shape))
+    data = ma.masked_array(data, np.broadcast_to(weight_mask[:,:,None], data.shape))
+    obs_data2_sum = np.sum(data**2)
     vr = 1 - np.sum(diff**2) / obs_data2_sum
 
     ax_txt = fig.add_subplot(gs0[1], frame_on=False, aspect='equal', xticks=[], yticks=[])

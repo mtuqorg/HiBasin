@@ -12,7 +12,7 @@ from mtuq.grid import UnstructuredGrid
 from mtuq.misfit.waveform import level2 
 from src.util.math import to_lune, Tashiro2MT6,ned2rtp
 from src.util.math import exponential_covariance, calc_InversionDeterminant_cd
-from src.misfit.misfit_preparation import to_numpy_arrays
+from src.misfit.misfit_preparation import to_numpy_arrays, get_timeshift_mask
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -59,13 +59,17 @@ class MCMC_SOLVER:
         self.time_shift_groups = len(mistfit_sw.time_shift_groups)
         assert  self.time_shift_groups in [1,2],\
                 ValueError("Unsupported number of time shift groups: %d" % len(mistfit_sw.time_shift_groups))
-        # Dimensions of the model parameters: ne + ns + ns * shift_group_no (mij, amp, shift)
-        self.ndim = self.ne + self.ns + self.ns * self.time_shift_groups
+
+        # generate the mask of timeshift for excluded components
+        self.timeshift_mask = get_timeshift_mask(self.weight_mask, self.time_shift_groups)
 
         # Select log-likelihood method
         self.method = method
         if method == 'mij_uncorrelated':
             self.log_prob = self._log_prob_full_mij_uncorrelated
+        elif method == 'mij_deviatoric_uncorrelated':
+            self.log_prob = self._log_prob_deviatoric_mij_uncorrelated
+            self.ne = 5 
         elif method == 'tt2015_uncorrelated':
             self.log_prob = self._log_prob_full_tt2015_uncorrelated
         elif method == 'tashiro_uncorrelated':
@@ -95,6 +99,9 @@ class MCMC_SOLVER:
             # Select the log probability for correlated data noise treatment
             if method == 'mij_correlated':
                 self.log_prob = self._log_prob_full_mij_correlated
+            elif method == 'deviatoric_mij_correlated':
+                self.log_prob = self._log_prob_deviatoric_mij_correlated
+                self.ne = 5
             elif method == 'tt2015_correlated':
                 self.log_prob = self._log_prob_full_tt2015_correlated
             elif method == 'tashiro_correlated':
@@ -105,6 +112,9 @@ class MCMC_SOLVER:
                 self.log_prob = self._log_prob_mtsf_correlated
             else:
                 raise ValueError(f"Unknown method: {method}")
+        
+        # Dimensions of the model parameters: ne + ns + ns * shift_group_no (mij, amp, shift)
+        self.ndim = self.ne + self.ns + np.sum(self.timeshift_mask)
 
         ##define some constants to speed up the computation
         self.MAXVAL2 = self.MAXVAL * 2
@@ -138,7 +148,44 @@ class MCMC_SOLVER:
         #station-based noise
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
         #station-based time shift
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+
+        # calculate predicted waveforms: d=Gm
+        pred = np.einsum('scet,e->sct', self.greens, mij)
+        # apply phase shift in frequency domain based on time shifts
+        pred_fft = rfft(pred, axis=-1)
+        pred = self._apply_phase_shift(pred_fft, shift)
+
+        # noise weighted residuals
+        noise_amp = self.noise_std * amp[:, None]
+        res = (self.obs - pred) / noise_amp[:, :, None]
+
+        #mask the components with zero weight
+        res = ma.masked_array(res, np.broadcast_to(self.weight_mask[:,:,None], res.shape))
+        noise_amp = ma.masked_array(noise_amp, self.weight_mask)
+
+        lp1 = np.sum(res ** 2)
+        lp2 = np.sum(self.nt * 2 * np.log(noise_amp))
+
+        return -0.5 * (lp1 + lp2)
+    
+    def _log_prob_deviatoric_mij_uncorrelated(self, m):
+        """Deviatoric MT Inversion with treatment of uncorrelated data noise and time shifts 
+        as free parameters using mij parameterization"""
+        if not np.isfinite(self._log_prior(m)): return -np.inf
+        
+        #mij in up-south-east
+        mij = np.empty(6, dtype=float)
+        #Mrr=-(Mtt+Mpp)
+        mij[0] = -m[0]-m[1] 
+        #Mtt, Mpp, Mrt, Mrp, Mtp in up-south-east convention
+        mij[1:] = m[:self.ne] 
+        #station-based noise
+        amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
+        #station-based time shift
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
 
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
@@ -175,7 +222,8 @@ class MCMC_SOLVER:
     
         mij = to_mij(rho,v,w,kappa,sigma,h) #in up-south-east convention
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
 
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
@@ -205,7 +253,8 @@ class MCMC_SOLVER:
         mij = ned2rtp(Tashiro2MT6(m[:6])) #in up-south-east convention
         
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
         
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
@@ -241,7 +290,8 @@ class MCMC_SOLVER:
     
         mij = to_mij(rho,v,w,kappa,sigma,h) #in up-south-east convention
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
 
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
@@ -264,7 +314,8 @@ class MCMC_SOLVER:
 
         mij = m[:self.ne]
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
 
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
@@ -291,7 +342,8 @@ class MCMC_SOLVER:
         mij = ned2rtp(Tashiro2MT6(m[:6]) ) #in up-south-east convention
         
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
         
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, mij)
@@ -318,7 +370,8 @@ class MCMC_SOLVER:
         fij = to_rtp(F0, phi, h)
 
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
 
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, fij)
@@ -343,7 +396,8 @@ class MCMC_SOLVER:
         fij = to_rtp(F0, phi, h)
 
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
 
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, fij)
@@ -378,8 +432,9 @@ class MCMC_SOLVER:
         
         #Amplitude and time shift
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
-        
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, np.concatenate((mij,fij)))
         # apply phase shift in frequency domain based on time shifts
@@ -411,7 +466,8 @@ class MCMC_SOLVER:
         
         #Amplitude and time shift
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2 
-        shift = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
+        shift = np.zeros((self.time_shift_groups*self.ns))
+        shift[self.timeshift_mask] = m[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
         
         # calculate predicted waveforms: d=Gm
         pred = np.einsum('scet,e->sct', self.greens, np.concatenate((mij,fij)))
@@ -491,9 +547,13 @@ class MCMC_SOLVER:
             phi = (m_sol[0]+ self.MAXVAL) / 20   #[0, 360]
             h = m_sol[1] / 3600                  #[-1,1]
             F0 = (m_sol[2] + self.MAXVAL)        #[0,7200]
-        elif source_type == 'mij':
+        elif source_type == 'mij' and self.ne == 6:#Full MT
             m_sol[0:6] *= self.M00
             rho,v,w,kappa,sigma,h = to_lune(m_sol[0:6])
+        elif source_type == 'mij' and self.ne == 5:#Deviatoric MT
+            m_sol[0:5] *= self.M00
+            mt6 = np.array([-m_sol[0]-m_sol[1], m_sol[0],m_sol[1],m_sol[2],m_sol[3],m_sol[4]])
+            rho,v,w,kappa,sigma,h = to_lune(mt6)
         else:
             #source type = Tashiro
             m_sol[:5] = (self.MAXVAL + m_sol[:5]) / 7200   #(0,1)
@@ -520,7 +580,9 @@ class MCMC_SOLVER:
         if self.time_shift_groups == 1:
             return source_solution, noise_solution, np.repeat(tau_solution, 2)
         else:
-            return source_solution, noise_solution, tau_solution
+            tau_solution2 = np.zeros((2*self.ns))
+            tau_solution2[self.timeshift_mask] = tau_solution
+            return source_solution, noise_solution, tau_solution2
         
     def save_chains(self, sampler, file_path='./', thin=1):
         flat_samples_out = sampler.get_chain(discard=0, thin=thin, flat=True)
