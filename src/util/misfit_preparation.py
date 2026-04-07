@@ -6,6 +6,7 @@ from mtuq.util.signal import get_components, get_time_sampling
 from mtuq.misfit.waveform import level2 as level2
 from numpy.fft import fft, ifft, fftfreq
 
+
 ##this function copy most definition of level2.py in mtuq
 def misfit_preparation(data, greens):
     """
@@ -37,14 +38,16 @@ def shift_data(data, tau):
     dt = data[0][0].stats.delta
     omega = 2*np.pi*fftfreq(nt, d=dt)
     shift = tau
-    for s in range(ns): 
-        data_z = data[s].select(component='Z')[0].data 
-        data_r = data[s].select(component='R')[0].data
-        data_t = data[s].select(component='T')[0].data
+    for s in range(ns):
+        if tau[2*s] != 0:
+            data_z = data[s].select(component='Z')[0].data 
+            data_r = data[s].select(component='R')[0].data
+            data[s].select(component='Z')[0].data = np.real(ifft(fft(data_z) * np.exp(-1j*omega*shift[2*s])))
+            data[s].select(component='R')[0].data = np.real(ifft(fft(data_r) * np.exp(-1j*omega*shift[2*s])))
 
-        data[s].select(component='Z')[0].data = np.real(ifft(fft(data_z) * np.exp(-1j*omega*shift[2*s])))
-        data[s].select(component='R')[0].data = np.real(ifft(fft(data_r) * np.exp(-1j*omega*shift[2*s])))
-        data[s].select(component='T')[0].data = np.real(ifft(fft(data_t) * np.exp(-1j*omega*shift[2*s+1])))
+        if tau[2*s+1] != 0:
+            data_t = data[s].select(component='T')[0].data
+            data[s].select(component='T')[0].data = np.real(ifft(fft(data_t) * np.exp(-1j*omega*shift[2*s+1])))
     return data
 
 def shift_greens(greens, tau):

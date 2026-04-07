@@ -19,6 +19,7 @@ class covariace_matrix:
         #parameter 'data_noise' has the mtuq Dataset
         self.noise_model = noise_model
         self.npts_acf_lag = npts_acf_lag
+        self.nt, self.dt = level2._get_time_sampling(data_noise)
 
         ##process the noise using the same way as the data_sw
         for traces in data_noise:
@@ -63,7 +64,6 @@ class covariace_matrix:
                 tags[index] = 'type:displacement'
 
         # collect metadata
-        self.nt, self.dt = level2._get_time_sampling(data_noise)
         self.stations = level2._get_stations(data_noise)
         self.components = level2._get_components(data_noise)
 
@@ -149,7 +149,7 @@ class covariace_matrix:
                 covL = cholesky(cov, lower=True)
                 #log of sqrt determinant
                 factor = np.sum(np.log(np.abs(np.diag(covL))))
-                covL /= np.exp(factor / nt)
+                # covL /= np.exp(factor / nt)
                 
                 # Invert combined matrix
                 covL_inv = solve_triangular(covL, np.eye(nt), lower=True)

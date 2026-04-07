@@ -191,7 +191,7 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
     if source_type == 'full':
         mt_degree = 6
     elif source_type == 'deviatoric':
-        raise ValueError('Mij method is not implemented for deviatoric MT.')
+        mt_degree = 5
     else:
         raise ValueError('wrong source type. It should be full or deviatoric.')
     
@@ -207,30 +207,40 @@ def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, 
         labels = ['$M_{xx}$', '$M_{yy}$', '$M_{zz}$', '$M_{xy}$', '$M_{xz}$', '$M_{yz}$']
         source_samples = rtp2ned2(m6_samples[:,0],m6_samples[:,1],m6_samples[:,2], \
                            m6_samples[:,3],m6_samples[:,4],m6_samples[:,5])
-        lon,lat = myfunc(source_samples[:,0],source_samples[:,1],source_samples[:,2], \
-                         source_samples[:,3],source_samples[:,4],source_samples[:,5])
+        # index of column in source_samples for the 6 MT parameters in the order 
+        # of Mxx, Myy, Mzz, Mxy, Mxz, Myz, used for corner plot and mean MT solution
+        mt_idx = [0, 1, 2, 3, 4, 5]
 
-        m6_sol = np.mean(source_samples[h_num_samples:,], axis=0)
-        lon_sol,lat_sol = myfunc(m6_sol[0],m6_sol[1],m6_sol[2], \
-                                 m6_sol[3],m6_sol[4],m6_sol[5])
-    elif mt_degree==5:#Dev
-        pass
+    elif mt_degree==5:#Deviatoric MT
+        labels = ['$M_{xx}$', '$M_{yy}$', '$M_{xy}$', '$M_{xz}$', '$M_{yz}$']
+        source_samples = rtp2ned2(-(m6_samples[:,0]+m6_samples[:,1]),m6_samples[:,0],m6_samples[:,1],\
+                           m6_samples[:,2],m6_samples[:,3],m6_samples[:,4])
+        # index of column in source_samples for the 5 MT parameters in the order of 
+        # Mxx, Myy, Mxy, Mxz, Myz, used for corner plot and mean MT solution
+        mt_idx = [0, 1, 3, 4, 5]
     else:
         raise ValueError('wrong mt degree. It should be 5 or 6.')
+    
+    lon,lat = myfunc(source_samples[:,0],source_samples[:,1],source_samples[:,2], \
+                    source_samples[:,3],source_samples[:,4],source_samples[:,5])
+
+    m6_sol = np.mean(source_samples[h_num_samples:,], axis=0)
+    lon_sol,lat_sol = myfunc(m6_sol[0],m6_sol[1],m6_sol[2], \
+                                m6_sol[3],m6_sol[4],m6_sol[5])
     print('mean mt:', m6_sol)
 
     ##setup colar bar
     norm = matplotlib.colors.Normalize(vmin=0.9*max(log_prob_2), vmax=max(log_prob_2))
     cm = copy.copy( plt.get_cmap('copper').reversed())
-    # cm.set_under('black')
-    ##########
 
+    ## plot the corner plot of the posterior distribution of the MT parameters
     print(source_samples[h_num_samples:,:].shape)
     titles = ['%.2f' % val for val in m6_sol]
-    fig = corner.corner(source_samples[h_num_samples:,:], labels=labels, truths = m6_sol,titles=titles,title_fmt=None, show_titles=True, truth_color = 'lightcoral',  max_n_ticks=4, label_kwargs={'fontsize':20})
+    fig = corner.corner(source_samples[h_num_samples:,:][:, mt_idx], labels=labels, truths = m6_sol[mt_idx],titles=titles,title_fmt=None, show_titles=True, truth_color = 'lightcoral',  max_n_ticks=4, label_kwargs={'fontsize':20})
 
     ##########
-    if mt_degree == 6:
+    #plot the lune diagram for the post-burn period and the whole chain
+    if mt_degree in [5,6]:
         #plot lune diagram
         #ax1 for the post-burn period
         ax1 = fig.add_axes([.57, .5, .25, .45])
@@ -367,43 +377,37 @@ def posterior_distribution_noise(flat_samples_fname, mt_degree, thin, ratio, sta
 
     plt.savefig(figure_fname, bbox_inches='tight')
     
-def posterior_distribution_timeshift(flat_samples_fname, mt_degree, thin, ratio, stations, figure_fname):
+  
+def posterior_distribution_timeshift(mcmc_solver, mt_degree, thin, ratio, stations, figure_fname):
     rcParams["font.size"] = 20
     
     ns = len(stations)
     ##read the samples from a .npy file
-    tau = np.load(flat_samples_fname)[::thin,mt_degree+ns:]
+    tau = np.load(mcmc_solver.chain_fname)[::thin,mt_degree+ns:]
     num_tau = tau.shape[1]
+    num_samples = tau.shape[0]
+    h_num_samples = int(ratio*num_samples)
+    num_time_shift_groups = mcmc_solver.time_shift_groups
 
-    if num_tau == 2*ns:
-        #Rayleigh waves
-        tau_Ray = tau[:,::2] 
-        #Love waves
-        tau_Love = tau[:,1::2] 
-    elif num_tau == ns:
-        tau_Ray = tau
-        tau_Love = tau
-    else:
-        raise ValueError('wrong number of time shift parameters. It should be ns or 2*ns.')
+    if num_tau < ns:
+        raise ValueError('wrong number of time shift parameters. It should be at least ns.')
         
-    #Plot time shift for Rayleigh waves
-    h_num_samples = int(ratio*tau_Ray.shape[0])
+    mean_tau = np.mean(tau[h_num_samples:], axis=0)
+    print('mean timeshifts:', mean_tau)
 
-    mean_tau_Ray = np.mean(tau_Ray[h_num_samples:], axis=0)
-    print('mean tau for Z/R:', mean_tau_Ray)
-    labels = ['$\\tau_{%s}$' % s.station for s in stations]
-    titles = ['%.2f' % val for val in mean_tau_Ray]
-    fig = corner.corner(tau_Ray[h_num_samples:,:], labels=labels, truths = mean_tau_Ray, titles=titles, title_fmt=None, show_titles=True, \
+    #generate the scatter plots using corner.corner
+    if num_time_shift_groups == 1:
+        # one timeshift for one station
+        labels_raw = ['$\\tau_{%s}$' % s.station for s in stations]
+    elif num_time_shift_groups == 2:
+        # two timeshifts for one station
+        labels_raw = ['$\\tau{%s}_{%s}$' % (i, s.station) for s in stations for i in (1, 2)]
+    else:
+        raise ValueError('Wrong num_time_shift_groups.')
+    
+    labels = [lbl for lbl, keep in zip(labels_raw, mcmc_solver.timeshift_mask) if keep]
+
+    titles = ['%.2f' % val for val in mean_tau]
+    fig = corner.corner(tau[h_num_samples:,:], labels=labels, truths = mean_tau, titles=titles, title_fmt=None, show_titles=True, \
                         truth_color = 'lightcoral',  max_n_ticks=4, labelpad=0.1, label_kwargs={'fontsize':25,'fontweight':'bold'})
-    plt.savefig(figure_fname+'_Rayleigh.jpg', bbox_inches='tight')
-
-    #Plot time shift for Rayleigh waves
-    h_num_samples = int(0.5*tau_Ray.shape[0])
-
-    mean_tau_Love = np.mean(tau_Love[h_num_samples:], axis=0)
-    print('mean tau for T:', mean_tau_Love)
-    titles = ['%.2f' % val for val in mean_tau_Love]
-    fig = corner.corner(tau_Love[h_num_samples:,:], labels=labels, truths = mean_tau_Love, titles=titles, title_fmt=None, show_titles=True, \
-                        truth_color = 'lightcoral',  max_n_ticks=4, labelpad=0.1, label_kwargs={'fontsize':25,'fontweight':'bold'})
-    plt.savefig(figure_fname+'_Love.jpg', bbox_inches='tight')
-  
+    plt.savefig(figure_fname, bbox_inches='tight')
