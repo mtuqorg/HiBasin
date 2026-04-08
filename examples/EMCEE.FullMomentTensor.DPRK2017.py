@@ -225,7 +225,7 @@ if __name__=='__main__':
         # Plot the posterior distribution
         posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2,ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
         posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_timeshift')
+        posterior_distribution_timeshift(solver, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_timeshift.jpg')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')

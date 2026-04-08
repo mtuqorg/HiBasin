@@ -25,8 +25,8 @@ if __name__=='__main__':
     #   
 
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20160909003001000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20160909003001000/weights.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20160909003001000/*.BH[ZRT].sac')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20160909003001000/weights.dat')
     event_id=     '20160909003001000'
     model=        'mdj3'
 
@@ -38,7 +38,7 @@ if __name__=='__main__':
         freq_min= 0.05,
         freq_max= 0.1,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2016b_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2016b_2d/',
         CPS_model=model,
         window_type='body_wave',
         window_length=30.,
@@ -51,7 +51,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2016b_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2016b_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
