@@ -24,8 +24,8 @@ if __name__=='__main__':
     #   
 
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20170903033001000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20170903033001000/weights.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20170903033001000/*.BH[ZRT].sac')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20170903033001000/weights_surf.dat')
     event_id=     '20170903033001000'
     model=        'mdj3'
 
@@ -37,7 +37,7 @@ if __name__=='__main__':
         freq_min= 0.1,
         freq_max= 0.333,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2017_2d/',
         CPS_model=model,
         window_type='body_wave',
         window_length=20.,
@@ -50,7 +50,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2017_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -70,8 +70,8 @@ if __name__=='__main__':
     
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-11.,
+        time_shift_max=+8.,
         time_shift_groups=['ZR','T']
         )
 
@@ -131,21 +131,13 @@ if __name__=='__main__':
         data_sw = data.map(process_sw)
 
         print('Reading Greens functions...\n')
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
         greens.convolve(wavelet)
         greens_bw = greens.map(process_bw)
         greens_sw = greens.map(process_sw)
-
-        # ##resample the data and greens
-        # for s in range(len(stations)):
-        #     data_sw[s].resample(1)
-        #     greens_sw[s].resample(1)
-        #     #update the delta in dataset.station
-        #     data_sw[s].station._refresh('delta',1)
-        #     greens_sw[s].station._refresh('delta',1)
 
     else:
         stations = None

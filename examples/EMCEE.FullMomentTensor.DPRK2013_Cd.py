@@ -41,8 +41,8 @@ if __name__=='__main__':
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/weights_surf.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20130212025751000/*.BH[ZRT].sac')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20130212025751000/weights_surf.dat')
     event_id=     '20130212025751000'
     model=        'mdj3'
 
@@ -53,7 +53,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2013_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -121,7 +121,7 @@ if __name__=='__main__':
         data_sw = data.map(process_sw)
 
         print('Reading Greens functions...\n')
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013_2d/mdj3',  format='CPS', model=model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2013_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
@@ -149,7 +149,7 @@ if __name__=='__main__':
         for traces in data_noise:
             traces.resample(1.0)
         npts_acf_lag = data_sw[0][0].stats.npts
-        noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=1600, noise_model='exponential')
+        noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=1600, noise_model='empirical')
         noise_std_sw = noise_estimator.get_noise_std()
         cov_inv, log_cov_det = noise_estimator.calc_InversionDeterminant_cd()
         print(noise_std_sw.shape)
@@ -181,7 +181,7 @@ if __name__=='__main__':
         print('Important parameters: ne-%d, ns-%s, nc-%d' % (ne, ns, nc))
         # ## Create the MCMC solver
         solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, noise_std_sw, cov_inv=cov_inv, log_cov_det=log_cov_det,\
-                             max_noise_parameter=40, M00=1.e14, method='mij_correlated')
+                             max_noise_parameter=400, M00=1.e14, method='mij_correlated')
         sampler, pool = solver.get_sampler('emcee', nchains=nwalker)
         # MCMC sampling
         state = sampler.run_mcmc(init, nsteps, progress=True)
@@ -210,20 +210,20 @@ if __name__=='__main__':
         best_mt = source_sol.get(0)
         lune_dict = source_sol.get_dict(0)
         greens_sw = shift_greens(greens_sw, tau_sol)
-        plot_data_greens1(event_id+'Mij_waveforms_sw_d%skm_noise_Covd.png' % evdp_in_km,
+        plot_data_greens1(event_id+'Mij_waveforms_sw_d%skm_noise_Covm.png' % evdp_in_km,
             data_sw, greens_sw, process_sw, 
             misfit_sw, stations, origin, best_mt, lune_dict)
 
-        plot_beachball(event_id+'Mij_beachball_sw_d%skm_noise_Covd.png' % evdp_in_km,
+        plot_beachball(event_id+'Mij_beachball_sw_d%skm_noise_Covm.png' % evdp_in_km,
             best_mt, stations, origin)
         
-        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'Waveformfit_mean_Covd.jpg', evdp_in_km)
+        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'Waveformfit_mean_Covm.jpg', evdp_in_km)
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2,ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter_Covd.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise_Covd.jpg')
-        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift_Covd')
+        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2,ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter_Covm.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise_Covm.jpg')
+        posterior_distribution_timeshift(solver, mt_degree=6, thin=10, ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift_Covm.jpg')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')

@@ -41,8 +41,8 @@ if __name__=='__main__':
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20130212025751000/weights_surf.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20130212025751000/*.BH[ZRT].sac')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20130212025751000/weights_surf.dat')
     event_id=     '20130212025751000'
     model=        'mdj3'
 
@@ -53,7 +53,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2013_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -121,7 +121,7 @@ if __name__=='__main__':
         data_sw = data.map(process_sw)
 
         print('Reading Greens functions...\n')
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2013_2d/mdj3',  format='CPS', model=model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2013_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
@@ -221,7 +221,7 @@ if __name__=='__main__':
         # Plot the posterior distribution
         posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2,ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
         posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift')
+        posterior_distribution_timeshift(solver, mt_degree=6, thin=10, ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift.jpg')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')

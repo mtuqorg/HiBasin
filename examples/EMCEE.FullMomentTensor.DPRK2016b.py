@@ -41,8 +41,8 @@ if __name__=='__main__':
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20160909003001000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20160909003001000/weights_surf.dat')
+    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20160909003001000/*.BH[ZRT].sac')
+    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/20160909003001000/weights_surf.dat')
     event_id=     '20160909003001000'
     model=        'mdj3'
 
@@ -53,7 +53,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2016b_2d/',
+        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2016b_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -67,8 +67,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-5,#-11.,
-        time_shift_max=9.,
+        time_shift_min=-9,
+        time_shift_max=9,
         time_shift_groups=['ZR','T']
         )
 
@@ -121,12 +121,12 @@ if __name__=='__main__':
         data_sw = data.map(process_sw)
 
         # ##manually shift the obs
-        t_shift = np.zeros((2*len(stations)))
-        t_shift[-3] = 8
-        data_sw = shift_data(data_sw, t_shift)
+        # t_shift = np.zeros((2*len(stations)))
+        # t_shift[-3] = 8
+        # data_sw = shift_data(data_sw, t_shift)
 
         print('Reading Greens functions...\n')
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2016b_2d/mdj3',  format='CPS', model=model)
+        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBasin/data/grn_2016b_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
@@ -178,13 +178,13 @@ if __name__=='__main__':
         ##number of unknowns
         ndim = ne + ns + len(misfit_sw.time_shift_groups)*ns
         nwalker = 512
-        nsteps = 10000
+        nsteps = 5000
         init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
 
         print('Important parameters: ne-%d, ns-%s, nc-%d' % (ne, ns, nc))
         # ## Create the MCMC solver
         solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, \
-                          noise_std_sw, max_noise_parameter=10, M00=1.0e13, method='tt2015_uncorrelated')
+                          noise_std_sw, max_noise_parameter=10, M00=1.0e13, method='mij_uncorrelated')
         sampler, pool = solver.get_sampler('emcee', nchains=nwalker)
         # MCMC sampling
         state = sampler.run_mcmc(init, nsteps, progress=True)
@@ -213,20 +213,20 @@ if __name__=='__main__':
         best_mt = source_sol.get(0)
         lune_dict = source_sol.get_dict(0)
         greens_sw = shift_greens(greens_sw, tau_sol)
-        plot_data_greens1(event_id+'_tt2015_waveforms_sw_d%skm_noise_cd.png' % evdp_in_km,
+        plot_data_greens1(event_id+'_Mij_waveforms_sw_d%skm_noise_cd.png' % evdp_in_km,
             data_sw, greens_sw, process_sw, 
             misfit_sw, stations, origin, best_mt, lune_dict)
 
-        plot_beachball(event_id+'_tt2015_beachball_sw_d%skm_noise_cd.png' % evdp_in_km,
+        plot_beachball(event_id+'_Mij_beachball_sw_d%skm_noise_cd.png' % evdp_in_km,
             best_mt, stations, origin)
         
-        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'_Waveformfit_mean_tt2015.jpg', evdp_in_km)
+        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'_Waveformfit_mean.jpg', evdp_in_km)
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2, ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter_tt2015.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise_tt2015.jpg')
-        posterior_distribution_timeshift(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10,ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift_tt2015')
+        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2, ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(solver, mt_degree=6, thin=10,ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift.jpg')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')
