@@ -20,16 +20,15 @@ from mtuq.util.cap import taper
 import multiprocessing as mp
 import emcee
 import sys
-from src.misfit.likelihood import MCMC_SOLVER
-from src.util.covariance_matrix import covariace_matrix
-from src.util.math import exponential_covariance, calc_InversionDeterminant_cd
-from src.util.data_selection import data_noise_estimate_uncorrelated
-from src.util.misfit_preparation import shift_greens, shift_data,  misfit_preparation
-from src.visualization.plot_waveform_fit import plot_waveform_fit
-from src.visualization.plot_posterior import posterior_distribution_mij, posterior_distribution_noise, posterior_distribution_timeshift
+from hibasin.misfit.likelihood import MCMC_SOLVER
+from hibasin.util.covariance_matrix import covariace_matrix
+from hibasin.util.math import exponential_covariance, calc_InversionDeterminant_cd
+from hibasin.util.misfit_preparation import shift_greens, shift_data,  misfit_preparation
+from hibasin.visualization.plot_waveform_fit import plot_waveform_fit
+from hibasin.visualization.plot_posterior import posterior_distribution_mij, posterior_distribution_noise, posterior_distribution_timeshift
 from obspy.signal.filter import bandpass
 from multiprocessing import shared_memory
-from src.misfit.misfit_preparation import to_numpy_arrays
+from hibasin.misfit.misfit_preparation import to_numpy_arrays
 
 os.environ["OMP_NUM_THREADS"] = "1"
 mp.set_start_method("fork", force=True)
@@ -52,8 +51,8 @@ if __name__=='__main__':
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
 
-    path_data=    fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20170903033001000/*.BH[ZRT].sac')
-    path_weights= fullpath('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/20170903033001000/weights_surf.dat')
+    path_data=    fullpath('data/20170903033001000/*.BH[ZRT].sac')
+    path_weights= fullpath('data/20170903033001000/weights_surf.dat')
     event_id=     '20170903033001000'
     model=        'mdj3'
 
@@ -64,7 +63,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/',
+        CPS_database='data/grn_2017_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -132,7 +131,7 @@ if __name__=='__main__':
         data_sw = data.map(process_sw)
 
         print('Reading Greens functions...\n')
-        db = open_db('/Users/u7091895/Documents/Research/BayMTI/HiBaysin/data/grn_2017_2d/mdj3',  format='CPS', model=model)
+        db = open_db('data/grn_2017_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
