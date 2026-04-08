@@ -2,7 +2,7 @@
 
 The Hierarchical BAyesian Source INversion (HiBASIN) is a Python package to perform seismic moment tensor (MT), single force (SF), or joint MT and SF inversion within a hierarchical Bayesian framework incoporating uncertainty estimates for data noise and theory error. Hibsasin is based on [MTUQ](https://github.com/mtuqorg/mtuq) and [emcee](https://github.com/dfm/emcee).  
 
-## Installation:
+## Installation
 
 1. Requirements:
     * [MTUQ](https://github.com/mtuqorg/mtuq) ([https://github.com/mtuqorg/mtuq](https://github.com/mtuqorg/mtuq))
