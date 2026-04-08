@@ -22,8 +22,8 @@ Read the MTUQ documentation for [Acquiring seismic data](https://mtuqorg.github.
 
 ## Examples
 Inversion result of the 2017 DPRK nuclear test obtained by HiBasin.
-    * [Script](./examples/EMCEE.FullMomentTensor.DPRK2017.py) 
-    * [Figure](docs/images/FMT_Bay_uncorr.pdf)
+   * [Script](./examples/EMCEE.FullMomentTensor.DPRK2017.py) 
+   * [Figure](docs/images/FMT_Bay_uncorr.pdf)
 
 ## Citation:
 Hu, J., Phạm, T.-S., & Tkalčić, H. (2023). Seismic moment tensor inversion with theory errors from 2-D Earth structure: implications for the 2009–2017 DPRK nuclear blasts. Geophysical Journal International, 235(3), 2035–2054. https://doi.org/10.1093/gji/ggad348
