@@ -24,8 +24,8 @@ if __name__=='__main__':
     #   
 
 
-    path_data=    fullpath('data/20160106013000000/*.BH[ZRT].sac')
-    path_weights= fullpath('data/20160106013000000/weights.dat')
+    path_data=    '../data/20160106013000000/*.BH[ZRT].sac'
+    path_weights= '../data/20160106013000000/weights.dat'
     event_id=     '20160106013000000'
     model=        'mdj3'
 
@@ -37,7 +37,7 @@ if __name__=='__main__':
         freq_min= 0.05,
         freq_max= 0.1,
         pick_type='CPS_metadata',
-        CPS_database='data/grn_2016a_2d/',
+        CPS_database='../data/grn_2016a_2d/',
         CPS_model=model,
         window_type='body_wave',
         window_length=30.,
@@ -50,7 +50,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='data/grn_2016a_2d/',
+        CPS_database='../data/grn_2016a_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -132,7 +132,7 @@ if __name__=='__main__':
 
 
         print('Reading Greens functions...\n')
-        db = open_db('data/grn_2016a_2d/mdj3',  format='CPS', model=model)
+        db = open_db('../data/grn_2016a_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
