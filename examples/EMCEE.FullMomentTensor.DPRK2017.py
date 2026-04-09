@@ -40,8 +40,8 @@ if __name__=='__main__':
     #   mpirun -n <NPROC> python GridSearch.FullMomentTensor.py
     #   
 
-    path_data=    fullpath('data/20170903033001000/*.BH[ZRT].sac')
-    path_weights= fullpath('data/20170903033001000/weights_surf.dat')
+    path_data=    '../data/20170903033001000/*.BH[ZRT].sac'
+    path_weights= '../data/20170903033001000/weights_surf.dat'
     event_id=     '20170903033001000'
     model=        'mdj3'
 
@@ -52,7 +52,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='data/grn_2017_2d/',
+        CPS_database='../data/grn_2017_2d/',
         CPS_model=model,
         window_type='surface_wave',
         window_length=350,
@@ -124,7 +124,7 @@ if __name__=='__main__':
         # data_sw = shift_data(data_sw, t_shift)
 
         print('Reading Greens functions...\n')
-        db = open_db('data/grn_2017_2d/mdj3',  format='CPS', model=model)
+        db = open_db('../data/grn_2017_2d/mdj3',  format='CPS', model=model)
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
