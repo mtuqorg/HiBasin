@@ -183,17 +183,10 @@ def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fnam
 
     plt.savefig(figure_fname)
     
-def posterior_distribution_mij(source_type, flat_samples_fname, log_prob_fname, thin, ratio, figure_fname):
+def posterior_distribution_mij(flat_samples_fname, log_prob_fname, mt_degree, thin, ratio, figure_fname):
     ##read the samples and log_likelihood from two .npy files 
     flat_samples = np.load(flat_samples_fname)
     log_prob = np.load(log_prob_fname)
-  
-    if source_type == 'full':
-        mt_degree = 6
-    elif source_type == 'deviatoric':
-        mt_degree = 5
-    else:
-        raise ValueError('wrong source type. It should be full or deviatoric.')
     
     ##v,w,kappa,sigma, h, rho
     m6_samples = flat_samples[::thin,:mt_degree]
@@ -378,10 +371,11 @@ def posterior_distribution_noise(flat_samples_fname, mt_degree, thin, ratio, sta
     plt.savefig(figure_fname, bbox_inches='tight')
     
   
-def posterior_distribution_timeshift(mcmc_solver, mt_degree, thin, ratio, stations, figure_fname):
+def posterior_distribution_timeshift(mcmc_solver, thin, ratio, stations, figure_fname):
     rcParams["font.size"] = 20
     
     ns = len(stations)
+    mt_degree = mcmc_solver.ne
     ##read the samples from a .npy file
     tau = np.load(mcmc_solver.chain_fname)[::thin,mt_degree+ns:]
     num_tau = tau.shape[1]
