@@ -20,7 +20,7 @@ from mtuq.util.cap import taper
 import multiprocessing as mp
 import emcee
 import sys
-from hibasin.misfit.likelihood import MCMC_SOLVER
+from hibasin.misfit.likelihood import MCMC_FullMij
 from hibasin.util.covariance_matrix import covariace_matrix
 from hibasin.util.math import exponential_covariance, calc_InversionDeterminant_cd
 from hibasin.util.misfit_preparation import shift_greens, shift_data,  misfit_preparation
@@ -167,22 +167,23 @@ if __name__=='__main__':
     #
 
     if comm.rank==0:
-        ##
-        MAXVAL = 3600
-        ne, ns, nc = 6, len(stations), 3
-    
         print('Evaluating surface wave misfit...\n')
         np.random.seed(1000)
-        ##number of unknowns
-        ndim = ne + ns + len(misfit_sw.time_shift_groups)*ns
+
         nwalker = 512
         nsteps = 10000
-        init = np.random.uniform(-MAXVAL, MAXVAL, (nwalker, ndim))
 
-        print('Important parameters: ne-%d, ns-%s, nc-%d' % (ne, ns, nc))
-        # ## Create the MCMC solver
-        solver = MCMC_SOLVER(misfit_sw, data_sw, greens_sw, \
-                          noise_std_sw, max_noise_parameter=400, M00=1.0e15, method='mij_uncorrelated') 
+        # Create the MCMC solver — ndim and all dimensions are derived internally
+        solver = MCMC_FullMij(misfit_sw, data_sw, greens_sw,
+                          noise_std_sw, max_noise_parameter=400,
+                          M00=1.0e15, noise_type='uncorrelated')
+
+        print('Important parameters: ne-%d, ns-%d, nc-%d, ndim-%d'
+              % (solver.ne, solver.ns, solver.nc, solver.ndim))
+
+        # Initialize walkers uniformly within prior bounds
+        init = np.random.uniform(-solver.MAXVAL, solver.MAXVAL, (nwalker, solver.ndim))
+
         sampler, pool = solver.get_sampler('emcee', nchains=nwalker)
         # MCMC sampling
         state = sampler.run_mcmc(init, nsteps, progress=True)
@@ -218,13 +219,14 @@ if __name__=='__main__':
         plot_beachball(event_id+'_Mij_beachball_sw_d%skm_noise_cd.png' % evdp_in_km,
             best_mt, stations, origin)
         
-        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'_Waveformfit_mean.jpg', evdp_in_km)
+        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, \
+                          event_id+'_Waveformfit_mean.jpg', delta=1, evdp_in_km=evdp_in_km)
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(source_type='full', flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, thin=2,ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(solver, mt_degree=6, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_timeshift.jpg')
+        posterior_distribution_mij(flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, mt_degree=solver.ne, thin=2,ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=solver.ne, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(solver, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_timeshift.jpg')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')
