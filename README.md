@@ -7,8 +7,10 @@ The Hierarchical BAyesian Source INversion (HiBASIN) is a Python package to perf
 1. Requirements:
     * [MTUQ](https://github.com/mtuqorg/mtuq) ([https://github.com/mtuqorg/mtuq](https://github.com/mtuqorg/mtuq))
     * [emcee](https://github.com/dfm/emcee) ([https://github.com/dfm/emcee](https://github.com/dfm/emcee))
-    * [corner](https://corner.readthedocs.io/en/latest/)
     * [pyrocko](https://git.pyrocko.org/pyrocko/pyrocko)
+    * [basemap](https://github.com/matplotlib/basemap)
+    * [corner](https://corner.readthedocs.io/en/latest/)
+
  
 2. Install HiBasin:
 ```shell

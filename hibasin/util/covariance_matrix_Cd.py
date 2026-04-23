@@ -13,55 +13,79 @@ from hibasin.util.math import exponential_covariance, calc_InversionDeterminant_
 def exp_func(x, re):
     return np.exp(-re*x)
 
-class covariace_matrix:
-    def __init__(self, origin, data_noise, npts_acf_lag, noise_length=3600, filter_type='bandpass', freq_min=0.02, freq_max=0.05, freq=0.05, noise_model='uncorrelated'):
-        '''noise_model: uncorrelated, exponential, empirical'''
-        #parameter 'data_noise' has the mtuq Dataset
+# two attenuated cosine ACF model (Mustać and Tkalčić, 2016, GJI)
+# C(tau) = b*exp(-tau/re1)*cos(2pi*tau/L1) + (1-b)*exp(-tau/re2)*cos(2pi*tau/L2)
+def two_atcosine_func(x, b, re1, L1, re2, L2):
+    return (b * np.exp(-x / re1) * np.cos(2*np.pi*x / L1) +
+            (1-b) * np.exp(-x / re2) * np.cos(2*np.pi*x / L2))
+
+class covariance_matrix_Cd:
+    def __init__(self, origin, data_noise, npts_acf_lag, process_data,
+                 noise_length=3600, noise_model='uncorrelated'):
+        """
+        Parameters
+        ----------
+        origin : mtuq Origin
+        data_noise : mtuq Dataset
+            Raw waveforms (unprocessed). The pre-event window is extracted
+            and filtered here using the same settings as process_data.
+        npts_acf_lag : int
+            Number of time samples in the signal window (= nt of data_sw).
+        process_data : mtuq ProcessData
+            The same ProcessData object used to process the observed data.
+            Filter type and frequencies are read from it directly, guaranteeing
+            identical processing for noise and signal.
+        noise_length : float
+            Length of the pre-event noise window in seconds.
+        noise_model : str
+            'uncorrelated', 'exponential', 'empirical', or
+            'two_attenuated_cosine'.
+        """
         self.noise_model = noise_model
         self.npts_acf_lag = npts_acf_lag
         self.nt, self.dt = level2._get_time_sampling(data_noise)
 
-        ##process the noise using the same way as the data_sw
-        for traces in data_noise:
-            ## get the pre-event noise data by triming the data based on the origin time
-            traces.trim(origin.time - noise_length, origin.time) 
-            # traces.trim(origin.time +1000, origin.time +1000 + noise_length) #Test for DPRK2016 tests because the pre-event data is noisy. 
+        # Extract filter settings from process_data so processing is identical
+        # to the observed data
+        filter_type = process_data.filter_type.lower()
+        freq_min = getattr(process_data, 'freq_min', None)
+        freq_max = getattr(process_data, 'freq_max', None)
+        freq     = getattr(process_data, 'freq', None)
 
-            #copy from Processdata in mtuq to make the noise and signal to be processed in the same way
+        for traces in data_noise:
+            traces.trim(origin.time - noise_length, origin.time)
+
             if filter_type == 'bandpass':
                 for trace in traces:
                     trace.detrend('demean')
                     trace.detrend('linear')
                     trace.taper(0.05, type='hann')
                     trace.filter('bandpass', zerophase=False,
-                                freqmin=freq_min,
-                                freqmax=freq_max)
-                    # print("Bandpass filter applied between %.2f - %.2f Hz" % (freq_min, freq_max))
+                                 freqmin=freq_min, freqmax=freq_max)
 
             elif filter_type == 'lowpass':
                 for trace in traces:
                     trace.detrend('demean')
                     trace.detrend('linear')
                     trace.taper(0.05, type='hann')
-                    trace.filter('lowpass', zerophase=False,
-                                freq=freq)
+                    trace.filter('lowpass', zerophase=False, freq=freq)
 
             elif filter_type == 'highpass':
                 for trace in traces:
                     trace.detrend('demean')
                     trace.detrend('linear')
                     trace.taper(0.05, type='hann')
-                    trace.filter('highpass', zerophase=False,
-                                freq=freq)
-            # traces.resample(1)
+                    trace.filter('highpass', zerophase=False, freq=freq)
+
+            else:
+                raise ValueError(f"Unsupported filter_type in process_data: "
+                                 f"'{process_data.filter_type}'")
+
             tags = traces.tags
             if 'type:velocity' in tags:
-                print("Converting velocity to displacement")
-                # convert to displacement
                 for trace in traces:
-                    trace.data = np.cumsum(trace.data)*self.dt
-                index = tags.index('type:velocity')
-                tags[index] = 'type:displacement'
+                    trace.data = np.cumsum(trace.data) * self.dt
+                tags[tags.index('type:velocity')] = 'type:displacement'
 
         # collect metadata
         self.stations = level2._get_stations(data_noise)
@@ -99,7 +123,7 @@ class covariace_matrix:
         '''
         Generate the covariance matrix for exponential decay noise model
         '''
-        x = np.arange(self.npts_acf_lag)
+        x = np.arange(self.npts_acf_lag) * self.dt
         cov_matrix = np.exp(-np.abs(x[:, None] - x[None, :]) * scale)
         return cov_matrix
     
@@ -108,6 +132,17 @@ class covariace_matrix:
         Generate the covariance matrix for empirical noise model
         '''
         return toeplitz(acf, acf)
+
+    def calc_two_attenuated_cosine_cd(self, b, re1, L1, re2, L2):
+        '''
+        Generate the covariance matrix for two attenuated cosine noise model.
+        Parameters are in time units (seconds): re1, re2 are decay lengths, L1, L2 are periods.
+        '''
+        lags = np.arange(self.npts_acf_lag) * self.dt  # lag axis in seconds
+        abs_lag = np.abs(lags[:, None] - lags[None, :])
+        cov_matrix = (b * np.exp(-abs_lag / re1) * np.cos(2*np.pi*abs_lag / L1) +
+                      (1-b) * np.exp(-abs_lag / re2) * np.cos(2*np.pi*abs_lag / L2))
+        return cov_matrix
 
     def get_covariance_matrix(self):
         cov_d = np.empty((self.ns, self.nc, self.npts_acf_lag, self.npts_acf_lag))
@@ -130,6 +165,27 @@ class covariace_matrix:
                 for c in range(self.nc):
                     cov_d[s, c] = self.calc_empirical_cd(acf[s, c, :self.npts_acf_lag])
           
+            return cov_d
+        elif self.noise_model == 'two_attenuated_cosine':
+            ## Fit two attenuated cosine ACF model and build covariance matrix
+            acf = self.get_acf()
+            time = np.arange(self.nt) * self.dt
+            # initial guesses: b=0.5, re1/re2 ~ 10% of record length, L1/L2 ~ 5% and 10%
+            T = self.nt * self.dt
+            p0 = [0.5, T*0.1, T*0.05, T*0.1, T*0.1]
+            bounds = ([0, 1e-6, 1e-6, 1e-6, 1e-6],
+                      [1,  np.inf, np.inf, np.inf, np.inf])
+            for s in range(self.ns):
+                for c in range(self.nc):
+                    try:
+                        popt, _ = curve_fit(two_atcosine_func, time, acf[s, c],
+                                            p0=p0, bounds=bounds, maxfev=10000)
+                    except RuntimeError:
+                        # fall back to initial guess if fit fails
+                        popt = p0
+                    b, re1, L1, re2, L2 = popt
+                    cov_d[s, c] = self.calc_two_attenuated_cosine_cd(b, re1, L1, re2, L2)
+
             return cov_d
         else:
             raise ValueError(f"Unknown noise model: {self.noise_model}")

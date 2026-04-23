@@ -60,7 +60,11 @@ class _MCMC_Base:
         _, self.delta = level2._get_time_sampling(data_sw)
 
         self.noise_std = noise_std_sw.astype(np.float32)
-        self.omega = 2 * np.pi * rfftfreq(self.nt, d=self.delta)
+        # pad by the maximum possible shift to avoid circular wrapping in phase shift
+        self._pad = int(np.ceil(max(abs(mistfit_sw.time_shift_min),
+                                    abs(mistfit_sw.time_shift_max)) / self.delta))
+        self._nt_pad = self.nt + 2 * self._pad
+        self._omega_pad = 2 * np.pi * rfftfreq(self._nt_pad, d=self.delta)
 
         self.max_noise = max_noise_parameter
         self.time_shift_min = mistfit_sw.time_shift_min
@@ -87,7 +91,6 @@ class _MCMC_Base:
                     self.shm.unlink()
                 raise
             self.log_cov_det = log_cov_det
-            self.scale = np.exp(2 * self.log_cov_det / self.nt)
 
         self.MAXVAL2 = self.MAXVAL * 2
         self.noise_scale1 = self.max_noise / self.MAXVAL2
@@ -109,16 +112,18 @@ class _MCMC_Base:
     def _log_prior(self, m):
         return 0 if np.all((-self.MAXVAL <= m) & (m <= self.MAXVAL)) else -np.inf
 
-    def _apply_phase_shift(self, pred_fft, shift):
-        omega_expanded = self.omega[None, None, :]
+    def _apply_phase_shift(self, pred, shift):
+        # Zero-pad symmetrically to convert circular shift to linear shift
+        pred_pad = np.pad(pred, ((0, 0), (0, 0), (self._pad, self._pad)))
         shift_expanded = np.zeros((self.ns, self.nc))
         if self.time_shift_groups == 1:
             shift_expanded[:, :] = shift[:, None]
         else:
             shift_expanded[:, :2] = shift[::2][:, None]
             shift_expanded[:, 2] = shift[1::2]
-        phase_shift = np.exp(-1j * omega_expanded * shift_expanded[:, :, None])
-        return np.real(irfft(pred_fft * phase_shift, axis=-1))
+        phase = np.exp(-1j * self._omega_pad[None, None, :] * shift_expanded[:, :, None])
+        shifted = np.real(irfft(rfft(pred_pad, axis=-1) * phase, axis=-1))
+        return shifted[:, :, self._pad:self._pad + self.nt]
 
     def _decode_amp_shift(self, m):
         amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2
@@ -144,7 +149,7 @@ class _MCMC_Base:
         mij = self._params_to_mij(m)
         amp, shift = self._decode_amp_shift(m)
         pred = np.einsum('scet,e->sct', self.greens, mij)
-        pred = self._apply_phase_shift(rfft(pred, axis=-1), shift)
+        pred = self._apply_phase_shift(pred, shift)
         return self._likelihood_fn(pred, amp)
 
     def _uncorrelated_likelihood(self, pred, amp):
@@ -158,11 +163,14 @@ class _MCMC_Base:
 
     def _correlated_likelihood(self, pred, amp):
         noise_amp = self.noise_std * amp[:, None]
-        res = self.obs - pred
-        lp1 = np.einsum('sct, sctt, sct->sc', res, shared_data['cov_inv'], res)
-        lp1 /= (noise_amp ** 2 * self.scale)
+        res = self.obs - pred                                              # (ns, nc, nt)
+        Cinv_r = np.einsum('sctu, scu->sct', shared_data['cov_inv'], res) # batched dgemv
+        lp1 = np.einsum('sct, sct->sc', res, Cinv_r)                     # (ns, nc)
+        lp1 /= noise_amp ** 2
         lp2 = 2 * self.log_cov_det + 2 * self.nt * np.log(noise_amp)
-        return -0.5 * np.sum(lp1 + lp2)
+        result = lp1 + lp2
+        result[self.weight_mask.astype(bool)] = 0.0
+        return -0.5 * np.sum(result)
 
     # ------------------------------------------------------------------
     # Sampler, cleanup, diagnostics

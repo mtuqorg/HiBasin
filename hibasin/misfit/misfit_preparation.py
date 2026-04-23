@@ -49,6 +49,7 @@ def to_numpy_arrays(mtuq_data, mtuq_greens):
         for _j in range(nc):
             # mask this component if all elements are zeros
             if not np.any(data[_i, _j]):
+                #1: exclude this component in likelihood calculation, 0: include this component in likelihood calculation
                 weight_mask[_i, _j] = 1
 
     return data, greens, weight_mask
