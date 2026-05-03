@@ -182,6 +182,7 @@ def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fnam
         ax2.annotate('c)', xy=(0.01, 0.99), xycoords='axes fraction', fontweight='bold', va='top', fontsize=20)
 
     plt.savefig(figure_fname)
+    plt.close()
     
 def posterior_distribution_mij(flat_samples_fname, log_prob_fname, mt_degree, thin, ratio, figure_fname):
     ##read the samples and log_likelihood from two .npy files 
@@ -268,6 +269,8 @@ def posterior_distribution_mij(flat_samples_fname, log_prob_fname, mt_degree, th
         ax2.annotate('c)', xy=(0.01, 0.99), xycoords='axes fraction', fontweight='bold', va='top', fontsize=20)
 
     plt.savefig(figure_fname)
+    plt.close()
+
 
 def posterior_distribution_tashiro(source_type, flat_samples_fname, log_prob_fname, thin, ratio, figure_fname):
     MAXVAL = 3600
@@ -351,29 +354,27 @@ def posterior_distribution_tashiro(source_type, flat_samples_fname, log_prob_fna
         ax2.annotate('c)', xy=(0.01, 0.99), xycoords='axes fraction', fontweight='bold', va='top', fontsize=20)
 
     plt.savefig(figure_fname)
+    plt.close()
     
 def posterior_distribution_noise(flat_samples_fname, mt_degree, thin, ratio, stations, figure_fname):
-    rcParams["font.size"] = 20    
-
     ns = len(stations)
     ##read the samples from a .npy file
     noise = np.load(flat_samples_fname)[::thin,mt_degree:mt_degree+ns]
-    
+
     h_num_samples = int(ratio*noise.shape[0])
 
     mean_noise = np.mean(noise[h_num_samples:], axis=0)
     print('mean noise:', mean_noise)
     labels = ['$k_{%s}$' % s.station for s in stations]
     titles = ['%.2f' % val for val in mean_noise]
-    fig = corner.corner(noise[h_num_samples:,:], labels=labels, truths = mean_noise, titles=titles, title_fmt=None, show_titles=True, \
-                        truth_color = 'lightcoral',  max_n_ticks=4, labelpad=0.1, label_kwargs={'fontsize':25,'fontweight':'heavy'})
+    with matplotlib.rc_context({'font.size': 20}):
+        fig = corner.corner(noise[h_num_samples:,:], labels=labels, truths = mean_noise, titles=titles, title_fmt=None, show_titles=True, \
+                            truth_color = 'lightcoral',  max_n_ticks=4, labelpad=0.1, label_kwargs={'fontsize':25,'fontweight':'heavy'})
+        plt.savefig(figure_fname, bbox_inches='tight')
+        plt.close()
 
-    plt.savefig(figure_fname, bbox_inches='tight')
-    
-  
+
 def posterior_distribution_timeshift(mcmc_solver, thin, ratio, stations, figure_fname):
-    rcParams["font.size"] = 20
-    
     ns = len(stations)
     mt_degree = mcmc_solver.ne
     ##read the samples from a .npy file
@@ -385,7 +386,7 @@ def posterior_distribution_timeshift(mcmc_solver, thin, ratio, stations, figure_
 
     if num_tau < ns:
         raise ValueError('wrong number of time shift parameters. It should be at least ns.')
-        
+
     mean_tau = np.mean(tau[h_num_samples:], axis=0)
     print('mean timeshifts:', mean_tau)
 
@@ -398,10 +399,12 @@ def posterior_distribution_timeshift(mcmc_solver, thin, ratio, stations, figure_
         labels_raw = ['$\\tau{%s}_{%s}$' % (i, s.station) for s in stations for i in (1, 2)]
     else:
         raise ValueError('Wrong num_time_shift_groups.')
-    
+
     labels = [lbl for lbl, keep in zip(labels_raw, mcmc_solver.timeshift_mask) if keep]
 
     titles = ['%.2f' % val for val in mean_tau]
-    fig = corner.corner(tau[h_num_samples:,:], labels=labels, truths = mean_tau, titles=titles, title_fmt=None, show_titles=True, \
-                        truth_color = 'lightcoral',  max_n_ticks=4, labelpad=0.1, label_kwargs={'fontsize':25,'fontweight':'bold'})
-    plt.savefig(figure_fname, bbox_inches='tight')
+    with matplotlib.rc_context({'font.size': 20}):
+        fig = corner.corner(tau[h_num_samples:,:], labels=labels, truths = mean_tau, titles=titles, title_fmt=None, show_titles=True, \
+                            truth_color = 'lightcoral',  max_n_ticks=4, labelpad=0.1, label_kwargs={'fontsize':25,'fontweight':'bold'})
+        plt.savefig(figure_fname, bbox_inches='tight')
+        plt.close()
