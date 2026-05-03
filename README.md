@@ -44,7 +44,7 @@ Read the MTUQ documentation for [Acquiring seismic data](https://mtuqorg.github.
    * Compute the ensemble of Green's functions
    * Estimate the covariance matrix by giving a reference moment tensor solution
   
-  Check the [script](./util/greens_ensemble.py) for details and the [script](./examples/prepare_greens_ensemble_DPRK2013) and [figure](docs/images/Cm_matrix_mt_itr0.png) for an example. 
+  Check the [script](./hibasin/util/greens_ensemble.py) for details and the [script](./examples/prepare_greens_ensemble_DPRK2013.py) and [figure](docs/images/Cm_matrix_mt_itr0.png) for an example. 
 
 ## Citation:
 1. Hu, J., T.-S., Phạm, & H., Tkalčić, (2023). Seismic moment tensor inversion with theory errors from 2-D Earth structure: implications for the 2009–2017 DPRK nuclear blasts. Geophysical Journal International, 235(3), 2035–2054. 
