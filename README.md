@@ -23,7 +23,7 @@ pip install -e .
 Read the MTUQ documentation for [Acquiring seismic data](https://mtuqorg.github.io/mtuq/user_guide/02.html), [Acquiring Green's functions](https://mtuqorg.github.io/mtuq/user_guide/03.html), and [Data  processing](https://mtuqorg.github.io/mtuq/user_guide/04.html). Note that, at least one-hour long pre-event ambient noise should be included in the downloaded seismic data. A cutting noise windown will be used to estimate the noise. 
 
 ## Examples
-1. Full moment tensor inversion using HiBasin for a tectonic earthquake:
+1. Full moment tensor inversion using HiBasin for a tectonic earthquake.
 |  uncorrelated noise treatment     |     correlated noise treatment        |
 |:---------------------------------:|:-------------------------------------:|
 | [Script](./examples/EMCEE.FullMomentTensor.AK20090407.py), [Figure](docs/images/FMT_Bay_uncorr_AK2009.pdf)  | [Script](./examples/EMCEE.FullMomentTensor.AK20090407_sharedCd.py), [Figure](docs/images/FMT_Bay_corr_AK2009.pdf)      |
