@@ -4,6 +4,7 @@ import numpy as np
 import numpy.ma as ma
 from numpy.fft import rfft, irfft, rfftfreq
 import multiprocessing as mp
+import multiprocessing.shared_memory  # makes mp.shared_memory accessible
 from mtuq.util.math import to_mij, to_rho, to_rtp
 from mtuq.grid.moment_tensor import to_mt
 from mtuq.grid.force import to_force
@@ -44,7 +45,8 @@ class _MCMC_Base:
 
     def __init__(self, mistfit_sw, data_sw, greens_sw, noise_std_sw,
                  cov_inv=None, log_cov_det=None, max_noise_parameter=100,
-                 M00=None, noise_type='uncorrelated'):
+                 M00=None, noise_type='uncorrelated', no_time_shift=False,
+                 component_grouping='vertical_horizontal'):
         self.MAXVAL = 3600
 
         # obs shape: (ns, nc, nt); greens shape: (ns, nc, ne, nt)
@@ -59,12 +61,19 @@ class _MCMC_Base:
         self.ns, self.nc, self.ne, self.nt = self.greens.shape
         _, self.delta = level2._get_time_sampling(data_sw)
 
-        self.noise_std = noise_std_sw.astype(np.float32)
-        # pad by the maximum possible shift to avoid circular wrapping in phase shift
-        self._pad = int(np.ceil(max(abs(mistfit_sw.time_shift_min),
-                                    abs(mistfit_sw.time_shift_max)) / self.delta))
-        self._nt_pad = self.nt + 2 * self._pad
-        self._omega_pad = 2 * np.pi * rfftfreq(self._nt_pad, d=self.delta)
+        # Map active components to fixed noise_std column order (Z→0, R→1, T→2).
+        # When a component is absent at all stations mtuq drops it from the
+        # component list (nc < 3), so we select only the matching columns.
+        _comp_col = {'Z': 0, 'R': 1, 'T': 2}
+        _active_cols = [_comp_col[c] for c in level2._get_components(data_sw)
+                        if c in _comp_col]
+        self.noise_std = noise_std_sw[:, _active_cols].astype(np.float32)
+        if not no_time_shift:
+            # pad by the maximum possible shift to avoid circular wrapping in phase shift
+            self._pad = int(np.ceil(max(abs(mistfit_sw.time_shift_min),
+                                        abs(mistfit_sw.time_shift_max)) / self.delta))
+            self._nt_pad = self.nt + 2 * self._pad
+            self._omega_pad = 2 * np.pi * rfftfreq(self._nt_pad, d=self.delta)
 
         self.max_noise = max_noise_parameter
         self.time_shift_min = mistfit_sw.time_shift_min
@@ -77,6 +86,24 @@ class _MCMC_Base:
 
         self.noise_type = noise_type
         if noise_type == 'correlated':
+            # cov_inv.ndim == 3  →  compact (2, nt, nt) from covariance_matrix_shared_Cd
+            # cov_inv.ndim == 4  →  full (ns, nc, nt, nt) from covariance_matrix_Cd
+            self._shared_cov = (cov_inv.ndim == 3)
+            if self._shared_cov:
+                # Derive group column indices once from data ordering.
+                # level2._get_components always sorts Z before R and T.
+                components = level2._get_components(data_sw)
+                if component_grouping == 'rayleigh_love':
+                    self._group0_cols = np.array(
+                        [i for i, c in enumerate(components) if c in ('Z', 'R')])
+                    self._group1_cols = np.array(
+                        [i for i, c in enumerate(components) if c == 'T'])
+                else:  # vertical_horizontal
+                    self._group0_cols = np.array(
+                        [i for i, c in enumerate(components) if c == 'Z'])
+                    self._group1_cols = np.array(
+                        [i for i, c in enumerate(components) if c != 'Z'])
+
             self.cov_inv_shape = cov_inv.shape
             self.cov_inv_dtype = cov_inv.dtype
             try:
@@ -90,20 +117,29 @@ class _MCMC_Base:
                     self.shm.close()
                     self.shm.unlink()
                 raise
-            self.log_cov_det = log_cov_det
+            self.log_cov_det = log_cov_det[:, _active_cols]
 
         self.MAXVAL2 = self.MAXVAL * 2
         self.noise_scale1 = self.max_noise / self.MAXVAL2
         self.noise_scale2 = self.noise_scale1 * self.MAXVAL
-        self.time_shift_scale1 = (self.time_shift_max - self.time_shift_min) / self.MAXVAL2
-        self.time_shift_scale2 = self.time_shift_scale1 * self.MAXVAL + self.time_shift_min
+        if not no_time_shift:
+            self.time_shift_scale1 = (self.time_shift_max - self.time_shift_min) / self.MAXVAL2
+            self.time_shift_scale2 = self.time_shift_scale1 * self.MAXVAL + self.time_shift_min
 
-        self.ndim = self.ne + self.ns + np.sum(self.timeshift_mask)
+        self.no_time_shift = no_time_shift
+        self.ndim = self.ne + self.ns + (0 if no_time_shift else np.sum(self.timeshift_mask))
 
-        # Bind likelihood function once to avoid per-call string comparison
-        self._likelihood_fn = (self._uncorrelated_likelihood
-                               if noise_type == 'uncorrelated'
-                               else self._correlated_likelihood)
+        # Bind likelihood function once at init time to avoid per-call branching.
+        if noise_type == 'uncorrelated':
+            self._likelihood_fn = self._uncorrelated_likelihood
+        elif getattr(self, '_shared_cov', False):
+            self._likelihood_fn = self._correlated_shared_likelihood
+        else:
+            self._likelihood_fn = self._correlated_likelihood
+
+        # Bind shift dispatch once at init time — eliminates per-call branching in log_prob.
+        self._amp_shift_fn = (self._amp_shift_no_shift if no_time_shift
+                              else self._amp_shift_with_shift)
 
     # ------------------------------------------------------------------
     # Prior and phase shift (shared across all parameterizations)
@@ -132,6 +168,14 @@ class _MCMC_Base:
                                       + self.time_shift_scale2)
         return amp, shift
 
+    def _amp_shift_no_shift(self, m, pred):
+        amp = m[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2
+        return amp, pred
+
+    def _amp_shift_with_shift(self, m, pred):
+        amp, shift = self._decode_amp_shift(m)
+        return amp, self._apply_phase_shift(pred, shift)
+
     # ------------------------------------------------------------------
     # Parameterization hook (override in subclasses)
     # ------------------------------------------------------------------
@@ -147,15 +191,14 @@ class _MCMC_Base:
         if not np.isfinite(self._log_prior(m)):
             return -np.inf
         mij = self._params_to_mij(m)
-        amp, shift = self._decode_amp_shift(m)
         pred = np.einsum('scet,e->sct', self.greens, mij)
-        pred = self._apply_phase_shift(pred, shift)
+        amp, pred = self._amp_shift_fn(m, pred)
         return self._likelihood_fn(pred, amp)
 
     def _uncorrelated_likelihood(self, pred, amp):
         noise_amp = self.noise_std * amp[:, None]
-        res = (self.obs - pred) / noise_amp[:, :, None]
-        res = ma.masked_array(res, np.broadcast_to(self.weight_mask[:, :, None], res.shape))
+        res = (self.obs - pred) / noise_amp[:, :self.nc, None]
+        res = ma.masked_array(res, np.broadcast_to(self.weight_mask[:, :self.nc, None], res.shape))
         noise_amp = ma.masked_array(noise_amp, self.weight_mask)
         lp1 = np.sum(res ** 2)
         lp2 = np.sum(self.nt * 2 * np.log(noise_amp))
@@ -167,6 +210,33 @@ class _MCMC_Base:
         Cinv_r = np.einsum('sctu, scu->sct', shared_data['cov_inv'], res) # batched dgemv
         lp1 = np.einsum('sct, sct->sc', res, Cinv_r)                     # (ns, nc)
         lp1 /= noise_amp ** 2
+        lp2 = 2 * self.log_cov_det + 2 * self.nt * np.log(noise_amp)
+        result = lp1 + lp2
+        result[self.weight_mask.astype(bool)] = 0.0
+        return -0.5 * np.sum(result)
+
+    def _correlated_shared_likelihood(self, pred, amp):
+        """
+        Fast likelihood for the shared covariance model
+        (covariance_matrix_shared_Cd with cov_inv shape (2, nt, nt)).
+
+        Compared with _correlated_likelihood:
+          • shared memory holds 2·nt² floats instead of ns·nc·nt²
+            → factor of ns·nc/2 less memory bandwidth per call
+          • matrix products are (ns, n_group, nt) @ (nt, nt) batched GEMMs
+            (BLAS-3) instead of ns·nc separate matrix-vector products
+          • C^{-1} is symmetric, so  r @ C^{-1}  gives the same quadratic
+            form  r^T C^{-1} r  as  C^{-1} @ r
+        """
+        noise_amp = self.noise_std * amp[:, None]    # (ns, nc)
+        res = self.obs - pred                         # (ns, nc, nt)
+        C = shared_data['cov_inv']                    # (2, nt, nt)
+
+        Cinv_r = np.empty_like(res)
+        Cinv_r[:, self._group0_cols, :] = res[:, self._group0_cols, :] @ C[0]
+        Cinv_r[:, self._group1_cols, :] = res[:, self._group1_cols, :] @ C[1]
+
+        lp1 = np.einsum('sct,sct->sc', res, Cinv_r) / noise_amp ** 2
         lp2 = 2 * self.log_cov_det + 2 * self.nt * np.log(noise_amp)
         result = lp1 + lp2
         result[self.weight_mask.astype(bool)] = 0.0
@@ -214,6 +284,8 @@ class _MCMC_Base:
 
     def _noise_timeshift_solution(self, m_sol):
         noise = m_sol[self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2
+        if self.no_time_shift:
+            return noise, np.zeros(2 * self.ns)
         tau = m_sol[self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2
         if self.time_shift_groups == 1:
             return noise, np.repeat(tau, 2)
@@ -224,8 +296,9 @@ class _MCMC_Base:
     def _transform_noise_timeshift_chains(self, samples):
         samples[:, self.ne:self.ne + self.ns] = (
             samples[:, self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2)
-        samples[:, self.ne + self.ns:] = (
-            samples[:, self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2)
+        if not self.no_time_shift:
+            samples[:, self.ne + self.ns:] = (
+                samples[:, self.ne + self.ns:] * self.time_shift_scale1 + self.time_shift_scale2)
         return samples
 
     def _save_chains_core(self, sampler, flat_samples, file_path, tag, thin):
@@ -235,6 +308,21 @@ class _MCMC_Base:
         self.logprob_fname = file_path + 'MCMC_sampling_%s_%s_log_prob.npy' % (tag, self.noise_type)
         log_prob = sampler.get_log_prob(discard=0, thin=thin, flat=True)
         np.save(self.logprob_fname, log_prob)
+
+    def get_map_mij(self, sampler, warm_up_steps=0, thin=1):
+        """
+        Return the MAP moment-tensor coefficients in the solver's internal
+        units (i.e. the values passed directly to the einsum in the likelihood,
+        compatible with solver.greens which is already scaled by M00).
+
+        Use these to build covariance_matrix_empirical_Cd between Phase 1 and
+        Phase 2:
+            mij_map = solver1.get_map_mij(sampler1,
+                          warm_up_steps=int(0.5*nsteps), thin=100)
+        """
+        flat  = sampler.get_chain(discard=warm_up_steps, thin=thin, flat=True)
+        m_sol = np.mean(flat, axis=0)
+        return self._params_to_mij(m_sol)
 
     def get_solution(self, emcee_sampler, warm_up_steps, thin):
         raise NotImplementedError
@@ -288,17 +376,21 @@ class MCMC_DeviatoricMij(_MCMC_Base):
 
     def __init__(self, mistfit_sw, data_sw, greens_sw, noise_std_sw,
                  cov_inv=None, log_cov_det=None, max_noise_parameter=100,
-                 M00=None, noise_type='uncorrelated'):
+                 M00=None, noise_type='uncorrelated', no_time_shift=False,
+                 component_grouping='vertical_horizontal'):
         super().__init__(mistfit_sw, data_sw, greens_sw, noise_std_sw,
                          cov_inv=cov_inv, log_cov_det=log_cov_det,
                          max_noise_parameter=max_noise_parameter,
-                         M00=M00, noise_type=noise_type)
+                         M00=M00, noise_type=noise_type, no_time_shift=no_time_shift,
+                         component_grouping=component_grouping)
         # Override ne/ndim: deviatoric samples 5 MT params, not 6
         self.ne = 5
-        self.ndim = self.ne + self.ns + np.sum(self.timeshift_mask)
+        self.ndim = self.ne + self.ns + (0 if no_time_shift else np.sum(self.timeshift_mask))
         self._likelihood_fn = (self._uncorrelated_likelihood
                                if noise_type == 'uncorrelated'
-                               else self._correlated_likelihood)
+                               else (self._correlated_shared_likelihood
+                                     if self._shared_cov
+                                     else self._correlated_likelihood))
 
     def _params_to_mij(self, m):
         mij = np.empty(6, dtype=float)

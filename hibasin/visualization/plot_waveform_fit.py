@@ -6,8 +6,8 @@
 
 from matplotlib import rcParams
 
-rcParams["savefig.dpi"] = 300
-rcParams["figure.dpi"] = 300
+# rcParams["savefig.dpi"] = 300
+# rcParams["figure.dpi"] = 300
 rcParams["font.size"] = 10
 
 from matplotlib import pyplot as plt
@@ -40,10 +40,15 @@ from mtuq.event import MomentTensor as MT_mtuq
 import sys
 from hibasin.util.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned
 
-def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname, delta=1, evdp_in_km=33):
+def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
+                      delta=1, evdp_in_km=33, components=None):
     ns,nc,ne,nt = greens.shape
     print(data.shape, greens.shape)
-    ###
+
+    # mtuq always orders components Z → R → T; infer active set when not provided
+    if components is None:
+        components = ['Z', 'R', 'T'][:nc]
+    _comp_labels = {'Z': 'Vertical', 'R': 'Radial', 'T': 'Tangential'}
 
     ##calculate the weight_mask
     weight_mask = np.zeros((ns,nc))
@@ -56,9 +61,19 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
 
     omega = 2*np.pi * rfftfreq(nt, d=delta)
     shifted_pred = np.zeros(pred.shape)
+
+    # Z and R share first shift group; T has second shift group
+    _zr_idx = [i for i, c in enumerate(components) if c in ('Z', 'R')]
+    _t_idx  = [i for i, c in enumerate(components) if c == 'T']
+
     for s in range(ns):
-        shifted_pred[s,:2] = irfft(rfft(pred[s,:2], axis=1) * np.exp(-1j*omega*tau[2*s]))
-        shifted_pred[s,2] = irfft(rfft(pred[s,2]) * np.exp(-1j*omega*tau[2*s+1]))
+        if _zr_idx:
+            shifted_pred[s, _zr_idx] = irfft(
+                rfft(pred[s, _zr_idx], axis=1) * np.exp(-1j * omega * tau[2*s]))
+        if _t_idx:
+            for idx in _t_idx:
+                shifted_pred[s, idx] = irfft(
+                    rfft(pred[s, idx]) * np.exp(-1j * omega * tau[2*s+1]))
 
     ########################### PLOT
     C0 = 'lightcoral'
@@ -73,7 +88,6 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
 
     time = np.arange(nt) * delta
     scale = 0.5 / np.amax(data)
-    comps = ['Vertical', 'Radial', 'Tangential']
     ########## PLOT WAVEFORM
     for i_comp in range(nc):
         ax = fig.add_subplot(gs1[i_comp], frameon=False)
@@ -112,7 +126,7 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
         ax.plot([0, nt], [-.7, -.7], lw=2, c='k')
         ax.set_xlim(0, max(time+1))
         ax.set_xlabel('Time (s)')
-        ax.set_title(comps[i_comp])
+        ax.set_title(_comp_labels.get(components[i_comp], components[i_comp]))
 
         if i_comp == 0: 
             ax.annotate('b)', xy=(0, 1), xycoords='axes fraction', ha='right', fontweight='bold', fontsize=12)
@@ -151,3 +165,4 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
     ax_txt.text(-.5,0.55,'Percent ISO = %.1f' % c_ISO, fontsize=10)
     ax_txt.text(-.5,0.7,'VR = %1.1f%%' % (vr*100), fontsize=10)
     plt.savefig(figure_fname, bbox_inches='tight', dpi=300)
+    plt.close()

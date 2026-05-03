@@ -78,19 +78,25 @@ def shift_greens(greens, tau):
         for s in range(ns):
             for e in range(3):
                 #Z component
-                greens[s][3*e].data = np.real(ifft(fft(greens[s][3*e].data) * np.exp(-1j*omega*shift[2*s]))) 
+                greens[s][3*e].data = np.real(ifft(fft(greens[s][3*e].data) * np.exp(-1j*omega*shift[2*s])))
                 #R component
                 greens[s][3*e+1].data = np.real(ifft(fft(greens[s][3*e+1].data) * np.exp(-1j*omega*shift[2*s])))
                 #T component
                 greens[s][3*e+2].data = np.real(ifft(fft(greens[s][3*e+2].data) * np.exp(-1j*omega*shift[2*s+1])))
-    else:
+    else:#ne=10 - 4 for Z, 4 for R, 2 for T
         for s in range(ns):
             for e in range(4):
                 #Z component
-                greens[s][e].data = np.real(ifft(fft(greens[s][e].data) * np.exp(-1j*omega*shift[2*s]))) 
+                greens[s][e].data = np.real(ifft(fft(greens[s][e].data) * np.exp(-1j*omega*shift[2*s])))
                 #R component
                 greens[s][e+4].data = np.real(ifft(fft(greens[s][e+4].data) * np.exp(-1j*omega*shift[2*s])))
-              #T component
+            #T component
             for e in range(2):
                   greens[s][e+8].data = np.real(ifft(fft(greens[s][e+8].data) * np.exp(-1j*omega*shift[2*s+1])))
+
+    # This part is important to make the shifted greens functions work when calling to_numpy_arrays.
+    for s in range(ns):
+        if hasattr(greens[s], 'components'):
+            del greens[s].components
+
     return greens

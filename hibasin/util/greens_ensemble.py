@@ -61,6 +61,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 from obspy.geodetics.base import gps2dist_azimuth
+import matplotlib.pyplot as plt
 from mtuq import open_db
 from mtuq.misfit.waveform import level2
 
@@ -458,9 +459,10 @@ def load_greens_ensemble(
             for s in range(len(stations)):
                 greens_proc[s].resample(sampling_rate)
                 greens_proc[s].station._refresh('delta', delta)
+                stations[s]._refresh('delta', delta)
 
         if components is None:
-            components = level2._get_components(greens_proc)
+            components = ['Z', 'R', 'T']
 
         arr = level2._get_greens(greens_proc, stations, components)  # (ns, nc, ne, nt)
 
@@ -483,4 +485,166 @@ def load_greens_ensemble(
     return greens_ensemble
 
 
+# ---------------------------------------------------------------------------
+# Velocity model ensemble visualisation
+# ---------------------------------------------------------------------------
 
+def plot_velocity_model_ensemble(model_paths, reference_model, figname,
+                                 max_depth=None):
+    """
+    Plot the ensemble of perturbed 1D velocity models in a single figure.
+
+    Parameters
+    ----------
+    model_paths : list of str
+        Paths to the perturbed Model96 files, e.g. from perturb_velocity_model().
+    reference_model : str
+        Path to the reference velocity model file.
+    figname : str
+        Output path for the saved figure.
+    max_depth : float or None
+        Maximum depth (km) to display.  Defaults to the total model thickness
+        (sum of all finite layer thicknesses; the half-space layer is excluded).
+    """
+
+    ref_thick, ref_vp, ref_vs, ref_rho, _, _ = _read_velocity_model(reference_model)
+
+    if max_depth is None:
+        max_depth = max(float(np.sum(ref_thick)), 100)
+
+    col_labels = ['Vp (km/s)', 'Vs (km/s)', r'$\rho$ (g/cm$^3$)']
+    fig, axes = plt.subplots(1, 3, sharey=True, figsize=(4, 5))
+
+    ref_profiles = [
+        _depth_profile(ref_vp,  ref_thick, max_depth),
+        _depth_profile(ref_vs,  ref_thick, max_depth),
+        _depth_profile(ref_rho, ref_thick, max_depth),
+    ]
+
+    for m, mod_path in enumerate(model_paths):
+        thick, vp, vs, rho, _, _ = _read_velocity_model(mod_path)
+        for ic, (vals, (rx, ry)) in enumerate(
+            zip([vp, vs, rho], ref_profiles)
+        ):
+            px, py = _depth_profile(vals, thick, max_depth)
+            axes[ic].plot(px, py, color='steelblue', lw=0.5, alpha=0.4)
+
+    # Reference model on top
+    for ic, (rx, ry) in enumerate(ref_profiles):
+        axes[ic].plot(rx, ry, color='red', lw=1.5, label='reference')
+        axes[ic].set_ylim(max_depth, 0)
+        axes[ic].set_xlabel(col_labels[ic], fontsize=9)
+        axes[ic].set_title(col_labels[ic], fontsize=9)
+        axes[ic].tick_params(labelsize=8)
+
+    axes[0].set_ylabel('Depth (km)', fontsize=9)
+    axes[0].legend(fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(figname, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Saved → {figname}")
+
+
+def _depth_profile(vals, thick, max_depth):
+    """
+    Build (x, y) arrays for a step-function depth profile.
+
+    x = property value (velocity or density, constant within each layer)
+    y = depth in km (increases downward)
+    """
+    depths     = np.cumsum(np.concatenate([[0], thick[:-1]]))
+    depth_ends = np.concatenate([depths[1:], [max_depth]])
+    x = np.repeat(vals, 2)
+    y = np.empty(2 * len(vals))
+    y[0::2] = depths
+    y[1::2] = depth_ends
+    return x, y
+
+
+def _to_step(vals, thick):
+    """
+    Convert layer values + thicknesses to step-function arrays following
+    the PerturbModel.py convention used by the nc4 writer:
+
+        depth : [0, h0, h0, h0+h1, h0+h1, ...]   (2*nlayers points)
+        sv    : [v0, v0, v1, v1, ...]
+    """
+    depth = np.zeros(2 * len(thick))
+    depth[1::2] = np.cumsum(thick)
+    depth[2::2] = np.cumsum(thick)[:-1]
+    sv = np.zeros(2 * len(vals))
+    sv[::2]  = vals
+    sv[1::2] = vals
+    return depth, sv
+
+
+# ---------------------------------------------------------------------------
+# NetCDF4 model ensemble export
+# ---------------------------------------------------------------------------
+
+def save_model_ensemble_nc4(model_paths, reference_model, save_path):
+    """
+    Save the ensemble of perturbed 1D velocity models to a NetCDF4 file.
+
+
+    NC4 structure
+    -------------
+    dimensions : Earth-model (M), Field (4), Param-depth (2*nlayers)
+    variables  :
+        model      (M, 4, 2*nlayers)  — perturbed ensemble [depth, Vp, Vs, rho]
+        orig_model (4, 2*nlayers)     — reference model
+
+    Parameters
+    ----------
+    model_paths : list of str
+        Paths to the perturbed Model96 files (e.g. from perturb_velocity_model()).
+    reference_model : str
+        Path to the reference velocity model file.
+    save_path : str
+        Output NC4 file path (e.g. 'work/MDJ/MDJ_models.nc4').
+    """
+    from netCDF4 import Dataset
+
+    ref_thick, ref_vp, ref_vs, ref_rho, _, _ = _read_velocity_model(reference_model)
+    nlayers = len(ref_thick)
+    npts    = 2 * nlayers
+    nmodels = len(model_paths)
+
+    models_arr = np.zeros((nmodels, 4, npts))
+    for m, mod_path in enumerate(model_paths):
+        thick, vp, vs, rho, _, _ = _read_velocity_model(mod_path)
+        depth, svp  = _to_step(vp,  thick)
+        _,     svs  = _to_step(vs,  thick)
+        _,     srho = _to_step(rho, thick)
+        models_arr[m] = [depth, svp, svs, srho]
+
+    ref_depth, ref_svp  = _to_step(ref_vp,  ref_thick)
+    _,         ref_svs  = _to_step(ref_vs,  ref_thick)
+    _,         ref_srho = _to_step(ref_rho, ref_thick)
+    orig_arr = np.array([ref_depth, ref_svp, ref_svs, ref_srho])
+
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+
+    rootgrp = Dataset(save_path, 'w')
+    rootgrp.title           = 'Perturbed Earth-model ensemble'
+    rootgrp.reference_model = os.path.basename(reference_model)
+    rootgrp.description     = ('Collection of perturbed Earth-models in '
+                                'step-function depth format (depth, Vp, Vs, rho).')
+
+    rootgrp.createDimension('Earth-model', nmodels)
+    rootgrp.createDimension('Field',       4)
+    rootgrp.createDimension('Param-depth', npts)
+
+    v = rootgrp.createVariable('model', float,
+                               dimensions=('Earth-model', 'Field', 'Param-depth'))
+    v[:] = models_arr
+    v.field_order = 'depth(km), Vp(km/s), Vs(km/s), rho(g/cm3)'
+
+    r = rootgrp.createVariable('orig_model', float,
+                               dimensions=('Field', 'Param-depth'))
+    r[:] = orig_arr
+    r.field_order = 'depth(km), Vp(km/s), Vs(km/s), rho(g/cm3)'
+
+    rootgrp.close()
+    print(f"Saved {save_path}  ({nmodels} models, {nlayers} layers)")
