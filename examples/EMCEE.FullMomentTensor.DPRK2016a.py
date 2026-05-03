@@ -21,9 +21,9 @@ import multiprocessing as mp
 import emcee
 import sys
 from hibasin.misfit.likelihood import MCMC_FullMij
-from hibasin.util.covariance_matrix import covariace_matrix
+from hibasin.util.covariance_matrix_Cd import covariance_matrix_Cd
 from hibasin.util.math import exponential_covariance, calc_InversionDeterminant_cd
-from hibasin.util.misfit_preparation import shift_greens, shift_data,  misfit_preparation
+from hibasin.misfit.misfit_preparation import shift_greens, shift_data
 from hibasin.visualization.plot_waveform_fit import plot_waveform_fit
 from hibasin.visualization.plot_posterior import posterior_distribution_mij, posterior_distribution_noise, posterior_distribution_timeshift
 from obspy.signal.filter import bandpass
@@ -52,8 +52,7 @@ if __name__=='__main__':
         freq_min=0.02,
         freq_max=0.05,
         pick_type='CPS_metadata',
-        CPS_database='../data/grn_2016a_2d/',
-        CPS_model=model,
+        CPS_database='../data/grn_2016a_2d/mdj3/',
         window_type='surface_wave',
         window_length=350,
         capuaf_file=path_weights,
@@ -66,8 +65,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-12.,
-        time_shift_max=+3.,
+        time_shift_min=-13.,
+        time_shift_max=+7.,
         time_shift_groups=['ZR','T']
         )
 
@@ -76,20 +75,6 @@ if __name__=='__main__':
     # objective function
     #
     station_id_list = parse_station_codes(path_weights)
-
-    #
-    # Next, we specify the moment tensor grid and source-time function
-    #
-    wavelet = Trapezoid(
-        magnitude=4.9)
-
-    #
-    # Origin time and location will be fixed. For an example in which they 
-    # vary, see examples/GridSearch.DoubleCouple+Magnitude+Depth.py
-    #
-    # See also Dataset.get_origins(), which attempts to create Origin objects
-    # from waveform metadata
-    #
 
     origin = Origin({
         'time': '2016-01-06T01:30:00.000000Z',
@@ -124,7 +109,6 @@ if __name__=='__main__':
         greens = db.get_greens_tensors(stations, origin)
 
         print('Processing Greens functions...\n')
-#         greens.convolve(wavelet)
         greens_sw = greens.map(process_sw)
 
         ##resample the data and greens
@@ -148,10 +132,12 @@ if __name__=='__main__':
         for traces in data_noise:
             traces.resample(1)
         npts_acf_lag = data_sw[0][0].stats.npts
-        noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=1000, noise_model='uncorrelated')
+        noise_estimator = covariance_matrix_Cd(origin, data_noise, npts_acf_lag, 
+                                               process_sw, noise_length=600, 
+                                               noise_model='uncorrelated',
+                                               )
         noise_std_sw = noise_estimator.get_noise_std()
-        # cov_inv, log_cov_det = noise_estimator.calc_InversionDeterminant_cd()
-        # print(noise_std_sw.shape)
+        noise_estimator.plot_noise_series(event_id+'_noise_series.png')
 
     else:
         stations = None
@@ -167,11 +153,12 @@ if __name__=='__main__':
         np.random.seed(1000)
 
         nwalker = 512
-        nsteps = 10000
+        nsteps = 5000
 
         # Create the MCMC solver — ndim and all dimensions are derived internally
         solver = MCMC_FullMij(misfit_sw, data_sw, greens_sw,
-                          noise_std_sw, max_noise_parameter=40, M00=1.0e13, noise_type='uncorrelated')
+                          noise_std_sw, max_noise_parameter=400, M00=1.0e14, 
+                          noise_type='uncorrelated')
 
         print('Important parameters: ne-%d, ns-%d, nc-%d, ndim-%d'
               % (solver.ne, solver.ns, solver.nc, solver.ndim))
@@ -214,13 +201,20 @@ if __name__=='__main__':
         plot_beachball(event_id+'_Mij_beachball_sw_d%skm_noise_cd.png' % evdp_in_km,
             best_mt, stations, origin)
         
-        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'_Waveformfit_mean.jpg', delta=1, evdp_in_km=evdp_in_km)
+        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, 
+                          stations, noise_sol, tau_sol, 
+                          event_id+'_Waveformfit_mean.jpg', delta=1, evdp_in_km=evdp_in_km)
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname,mt_degree=solver.ne, thin=2,ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=solver.ne, thin=10, ratio=0.5,stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(solver, thin=10,ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift.jpg')
+        posterior_distribution_mij(flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname,
+                                   mt_degree=solver.ne, thin=2,ratio=0.5, 
+                                   figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=solver.ne, 
+                                     thin=10, ratio=0.5,stations=stations, 
+                                     figure_fname=event_id+'_Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(solver, thin=10,ratio=0.5, stations=stations, 
+                                         figure_fname=event_id+'_Posterior_timeshift.jpg')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')

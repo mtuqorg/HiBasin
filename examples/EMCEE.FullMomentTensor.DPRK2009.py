@@ -21,9 +21,9 @@ import multiprocessing as mp
 import emcee
 import sys
 from hibasin.misfit.likelihood import MCMC_FullMij
-from hibasin.util.covariance_matrix import covariace_matrix
+from hibasin.util.covariance_matrix_Cd import covariance_matrix_Cd
 from hibasin.util.math import exponential_covariance, calc_InversionDeterminant_cd
-from hibasin.util.misfit_preparation import shift_greens, shift_data,  misfit_preparation
+from hibasin.misfit.misfit_preparation import shift_greens, shift_data
 from hibasin.visualization.plot_waveform_fit import plot_waveform_fit
 from hibasin.visualization.plot_posterior import posterior_distribution_mij, posterior_distribution_noise, posterior_distribution_timeshift
 from obspy.signal.filter import bandpass
@@ -53,8 +53,7 @@ if __name__=='__main__':
         freq_max=0.05,
         # pick_type='user_supplied',#'CPS_metadata',
         pick_type='CPS_metadata',
-        CPS_database='../data/grn_2009_2d/',
-        CPS_model=model,
+        CPS_database='../data/grn_2009_2d/mdj3/',
         window_type='surface_wave',
         window_length=350,
         capuaf_file=path_weights,
@@ -67,8 +66,8 @@ if __name__=='__main__':
     #
     misfit_sw = Misfit(
         norm='L2',
-        time_shift_min=-10.,
-        time_shift_max=+10.,
+        time_shift_min=-13.,
+        time_shift_max=+7.,
         time_shift_groups=['ZR','T'],
         )
 
@@ -149,9 +148,13 @@ if __name__=='__main__':
         for traces in data_noise:
             traces.resample(1.0)
         npts_acf_lag = data_sw[0][0].stats.npts
-        noise_estimator = covariace_matrix(origin, data_noise, npts_acf_lag, noise_length=600, noise_model='uncorrelated')
+        noise_estimator = covariance_matrix_Cd(origin, data_noise, 
+                                               npts_acf_lag, process_sw, 
+                                               noise_length=2000, 
+                                               noise_model='uncorrelated',
+                                               offset_t0=400) #shift the endtime of noise window before origin time by 400 s 
+                                                              # to avoid the contamination of signal in noise estimation.
         noise_std_sw = noise_estimator.get_noise_std()
-        # cov_inv, log_cov_det = noise_estimator.calc_InversionDeterminant_cd()
         print(noise_std_sw.shape)
 
     else:
@@ -171,8 +174,12 @@ if __name__=='__main__':
         nsteps = 10000
 
         # Create the MCMC solver — ndim and all dimensions are derived internally
-        solver = MCMC_FullMij(misfit_sw, data_sw, greens_sw,
-                          noise_std_sw, max_noise_parameter=400, M00=1.e13, noise_type='uncorrelated')
+        solver = MCMC_FullMij(misfit_sw, 
+                              data_sw, greens_sw,
+                              noise_std_sw, 
+                              max_noise_parameter=40, 
+                              M00=1.e13,
+                              noise_type='uncorrelated')
 
         print('Important parameters: ne-%d, ns-%d, nc-%d, ndim-%d'
               % (solver.ne, solver.ns, solver.nc, solver.ndim))
@@ -215,13 +222,21 @@ if __name__=='__main__':
         plot_beachball(event_id+'Mij_beachball_sw_d%skm_noise_cd.png' % evdp_in_km,
             best_mt, stations, origin)
         
-        plot_waveform_fit(best_mt.as_vector(), solver.obs, solver.greens, stations, noise_sol, tau_sol, event_id+'_Waveformfit_mean.jpg', delta=1, evdp_in_km=evdp_in_km)
+        plot_waveform_fit(best_mt.as_vector(), 
+                        solver.obs, solver.greens, stations, noise_sol, tau_sol, 
+                        event_id+'_Waveformfit_mean.jpg', delta=1, evdp_in_km=evdp_in_km)
 
         #
         # Plot the posterior distribution
-        posterior_distribution_mij(flat_samples_fname=solver.chain_fname,log_prob_fname=solver.logprob_fname, mt_degree=solver.ne, thin=2, ratio=0.5, figure_fname=event_id+"_Posterior_source_parameter.jpg")
-        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, mt_degree=solver.ne, thin=10,  ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_data_noise.jpg')
-        posterior_distribution_timeshift(solver, thin=10, ratio=0.5, stations=stations, figure_fname=event_id+'_Posterior_timeshift')
+        posterior_distribution_mij(flat_samples_fname=solver.chain_fname,
+                                   log_prob_fname=solver.logprob_fname, 
+                                   mt_degree=solver.ne, thin=2, ratio=0.5, 
+                                   figure_fname=event_id+"_Posterior_source_parameter.jpg")
+        posterior_distribution_noise(flat_samples_fname=solver.chain_fname, 
+                                     mt_degree=solver.ne, thin=10,  ratio=0.5, stations=stations, 
+                                     figure_fname=event_id+'_Posterior_data_noise.jpg')
+        posterior_distribution_timeshift(solver, thin=10, ratio=0.5, stations=stations, 
+                                         figure_fname=event_id+'_Posterior_timeshift')
         print(noise_sol)
         print(tau_sol)
         print('\nFinished\n')
