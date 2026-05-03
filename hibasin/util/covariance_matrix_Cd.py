@@ -21,7 +21,7 @@ def two_atcosine_func(x, b, re1, L1, re2, L2):
 
 class covariance_matrix_Cd:
     def __init__(self, origin, data_noise, npts_acf_lag, process_data,
-                 noise_length=3600, noise_model='uncorrelated'):
+                 noise_length=3600, noise_model='uncorrelated', offset_t0=0):
         """
         Parameters
         ----------
@@ -38,8 +38,9 @@ class covariance_matrix_Cd:
         noise_length : float
             Length of the pre-event noise window in seconds.
         noise_model : str
-            'uncorrelated', 'exponential', 'empirical', or
-            'two_attenuated_cosine'.
+            'uncorrelated', 'exponential', 'empirical', or 'two_attenuated_cosine'.
+        offset_t0 : float
+            Time offset for the pre-event noise window in seconds.
         """
         self.noise_model = noise_model
         self.npts_acf_lag = npts_acf_lag
@@ -53,7 +54,7 @@ class covariance_matrix_Cd:
         freq     = getattr(process_data, 'freq', None)
 
         for traces in data_noise:
-            traces.trim(origin.time - noise_length, origin.time)
+            traces.trim(origin.time - noise_length - offset_t0, origin.time - offset_t0)
 
             if filter_type == 'bandpass':
                 for trace in traces:
@@ -94,7 +95,7 @@ class covariance_matrix_Cd:
         #
         # collapse main structures into NumPy arrays
         #
-        self.data = level2._get_data(data_noise, self.stations, self.components) 
+        self.data = level2._get_data(data_noise, self.stations, self.components)
         self.ns, self.nc, self.nt = self.data.shape
 
     def _get_acf(self, data_1d):
@@ -170,11 +171,13 @@ class covariance_matrix_Cd:
             ## Fit two attenuated cosine ACF model and build covariance matrix
             acf = self.get_acf()
             time = np.arange(self.nt) * self.dt
-            # initial guesses: b=0.5, re1/re2 ~ 10% of record length, L1/L2 ~ 5% and 10%
-            T = self.nt * self.dt
-            p0 = [0.5, T*0.1, T*0.05, T*0.1, T*0.1]
+            # Cap re1/re2 so exp(-T_sig/re) <= exp(-3) ~ 0.05 at the end of
+            # the signal window, forcing decay to near-zero (Mustać & Tkalčić).
+            T_sig  = self.npts_acf_lag * self.dt
+            re_max = T_sig / 4.0
+            p0 = [0.5, T_sig*0.1, T_sig*0.05, T_sig*0.1, T_sig*0.1]
             bounds = ([0, 1e-6, 1e-6, 1e-6, 1e-6],
-                      [1,  np.inf, np.inf, np.inf, np.inf])
+                      [1, re_max, np.inf, re_max, np.inf])
             for s in range(self.ns):
                 for c in range(self.nc):
                     try:
@@ -189,7 +192,7 @@ class covariance_matrix_Cd:
             return cov_d
         else:
             raise ValueError(f"Unknown noise model: {self.noise_model}")
-    
+
     def calc_InversionDeterminant_cd(self):
         '''
         Compute the inverse of matrix N-by-N cov_d, where N is the number of samples
@@ -201,52 +204,79 @@ class covariance_matrix_Cd:
         # Cholesky decomposition to obtain lower matrix
         for ist in range(ns):
             for ic in range(nc):
-                cov = cov_d[ist,ic] 
+                cov = cov_d[ist,ic]
                 covL = cholesky(cov, lower=True)
                 #log of sqrt determinant
                 factor = np.sum(np.log(np.abs(np.diag(covL))))
                 # covL /= np.exp(factor / nt)
-                
+
                 # Invert combined matrix
                 covL_inv = solve_triangular(covL, np.eye(nt), lower=True)
                 cov_inv[ist,ic] = np.matmul(covL_inv.T, covL_inv)
                 log_cov_det[ist,ic] = factor
         return cov_inv, log_cov_det
 
-    def plot_noise_series(self):
+    def plot_noise_series(self, figname='noise_series.png'):
         time_ax = np.arange(self.nt) * self.dt
-        fig, axs = plt.subplots(self.nc, self.ns, sharex= True, sharey = True, figsize = (10,4))
+        fig, axs = plt.subplots(self.nc, self.ns, sharex=True, sharey=True, figsize=(10, 4))
         for ist in range(self.ns):
             for ic in range(self.nc):
-                axs[ic,ist].plot(time_ax, self.data[ist,ic], lw=0.5) #ns . nc . nt
-                axs[0,ist].set_title(self.stations[ist].network + '.' + self.stations[ist].station,fontsize=9)
-                axs[-1,ist].set_xlabel('Time (s)')
-                axs[ic,0].set_ylabel(self.components[ic])
+                axs[ic, ist].plot(time_ax, self.data[ist, ic], lw=0.5)
+                axs[0, ist].set_title(self.stations[ist].network + '.' + self.stations[ist].station, fontsize=9)
+                axs[-1, ist].set_xlabel('Time (s)')
+                axs[ic, 0].set_ylabel(self.components[ic])
         plt.tight_layout()
-        plt.savefig('noise_series.png', dpi=300)
+        plt.savefig(figname, dpi=300)
         plt.close()
 
-    def plot_auto_corr_func(self):
-        acf = self.get_acf()[:,:,:self.npts_acf_lag]
-        time_ax = np.arange(self.npts_acf_lag) * self.dt
+    def plot_auto_corr_func(self, figname='acf.png'):
+        acf_full = self.get_acf()                            # (ns, nc, nt)
+        acf      = acf_full[:, :, :self.npts_acf_lag]
+        time_ax  = np.arange(self.npts_acf_lag) * self.dt
 
-        fig,axes = plt.subplots(3,1, sharex=True, figsize=(7,5))
+        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(7, 5))
         for ist in range(self.ns):
             for ic in range(self.nc):
-                axes[ic].plot( time_ax, acf[ist,ic] )
-                axes[ic].set_ylim([-1,1])
-                axes[ic].set_xlim([min(time_ax),max(time_ax)])
-                
-                axes[ic].text(10,0.75,self.components[ic])
+                axes[ic].plot(time_ax, acf[ist, ic], alpha=0.5, lw=0.8)
+                axes[ic].set_ylim([-1, 1])
+                axes[ic].set_xlim([min(time_ax), max(time_ax)])
+                axes[ic].text(10, 0.75, self.components[ic])
+            axes[2].set_xlabel('Lag (s)', fontsize=12)
+            axes[1].set_ylabel('Autocorrelation', fontsize=12)
+            axes[2].legend([s.network + '.' + s.station for s in self.stations],
+                           loc='lower right', ncol=3, fontsize=9)
 
-            axes[2].set_xlabel('Lag (samples)',fontsize = 12)
-            axes[1].set_ylabel('Autocorrelation', fontsize = 12)
-            axes[2].legend([s.network + '.' + s.station for s in self.stations],loc = 'lower right', ncol=3, fontsize = 9)
-
-        #plot the zeros
         for i in range(3):
-            axes[i].plot(time_ax, np.zeros(self.npts_acf_lag),'--', color = 'gray', linewidth = 1)
-        plt.savefig('acf.png', dpi = 300, bbox_inches = 'tight')
+            axes[i].plot(time_ax, np.zeros(self.npts_acf_lag), '--', color='gray', linewidth=1)
+
+        if self.noise_model == 'two_attenuated_cosine':
+            time_full = np.arange(self.nt) * self.dt
+            T_sig  = self.npts_acf_lag * self.dt
+            re_max = T_sig / 4.0
+            p0     = [0.5, T_sig*0.1, T_sig*0.05, T_sig*0.1, T_sig*0.1]
+            bounds = ([0, 1e-6, 1e-6, 1e-6, 1e-6], [1, re_max, np.inf, re_max, np.inf])
+            for ist in range(self.ns):
+                for ic in range(self.nc):
+                    try:
+                        popt, _ = curve_fit(two_atcosine_func, time_full, acf_full[ist, ic],
+                                            p0=p0, bounds=bounds, maxfev=10000)
+                    except RuntimeError:
+                        popt = p0
+                    axes[ic].plot(time_ax, two_atcosine_func(time_ax, *popt),
+                                  'k--', lw=1.2)
+        elif self.noise_model == 'exponential':
+            time_full = np.arange(self.nt) * self.dt
+            for ist in range(self.ns):
+                for ic in range(self.nc):
+                    try:
+                        re, _ = curve_fit(exp_func, time_full, acf_full[ist, ic],
+                                          p0=[0.1], maxfev=5000)
+                    except RuntimeError:
+                        re = [0.1]
+                    axes[ic].plot(time_ax, exp_func(time_ax, re[0]), 'k--', lw=1.2)
+
+        plt.savefig(figname, dpi=300, bbox_inches='tight')
+        plt.close()
 
     def plot_data_covariance_matrix(self, figname, sigma_in=None):
         covd = self.get_covariance_matrix()
@@ -262,7 +292,8 @@ class covariance_matrix_Cd:
             vmax = 1
     
         ##plot the covariance matrix for all components of all stations
-        fig,axes = plt.subplots(nc,ns, sharex=True, sharey=True, figsize=(9,2.5), subplot_kw={'xticks': [0,150,300], 'yticks': [0,150,300]})
+        fig_width = 1.5 * ns
+        fig,axes = plt.subplots(nc,ns, sharex=True, sharey=True, figsize=(fig_width,2.5), subplot_kw={'xticks': [0,150,300], 'yticks': [0,150,300]})
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
         # cm = copy.copy( plt.get_cmap('copper').reversed())
         cm = plt.get_cmap('jet')
@@ -293,6 +324,7 @@ class covariance_matrix_Cd:
             cb.set_label(label='Covariance amplitude',fontsize=10)
         #plt.colorbar(im, cax=cax, ax = axes[-1,-1])
         plt.savefig(figname, dpi = 300, bbox_inches = 'tight')
+        plt.close()
 
 
 

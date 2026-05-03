@@ -70,6 +70,8 @@ Typical workflow
 """
 
 import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
 from scipy.linalg import cholesky, solve_triangular
 
 
@@ -349,6 +351,70 @@ class covariance_matrix_Cm:
         for s, (stat, dev_s) in enumerate(zip(self.stations, self._dev)):
             code = _station_code(stat)
             print(f"  [{s:2d}] {code:12s}  nmodels={dev_s.shape[0]}")
+
+    def plot_model_covariance_matrix(self, mij, figname, noise_std=None):
+        """
+        Plot C_m for each station and component.
+
+        Parameters
+        ----------
+        mij : ndarray (ne,)
+            Moment tensor in absolute physical units (Nm).
+        figname : str
+            Output file path (e.g. 'Cm_matrix.png').
+        noise_std : ndarray (ns, nc) or None
+            If given, C_m is divided by noise_std^2 (dimensionless ratio).
+        """
+        cov_m = self.calc_Cm(mij)          # (ns, nc, nt, nt)
+        ns, nc, nt, _ = cov_m.shape
+        comps = ['Z', 'R', 'T'][:nc]
+
+        if noise_std is not None:
+            plot_data = cov_m / noise_std[:, :, None, None] ** 2
+        else:
+            plot_data = cov_m
+
+        fig, axes = plt.subplots(
+            nc, ns,
+            sharex=True, sharey=True,
+            figsize=(min(9, ns), 2.5),
+        )
+        if ns == 1:
+            axes = axes[:, np.newaxis]
+
+        cm = plt.get_cmap('jet')
+
+        for ist in range(ns):
+            for ic in range(nc):
+                panel = plot_data[ist, ic]
+                pmax = np.max(np.abs(panel))
+                axes[ic, ist].imshow(panel, vmin=-pmax, vmax=pmax,
+                                     cmap=cm, aspect='auto')
+
+                # Max in top-left, min in bottom-right
+                axes[ic, ist].text(
+                    0.02, 0.97, f'{panel.max():.1e}',
+                    transform=axes[ic, ist].transAxes,
+                    ha='left', va='top', fontsize=5, color='white',
+                )
+                axes[ic, ist].text(
+                    0.98, 0.03, f'{panel.min():.1e}',
+                    transform=axes[ic, ist].transAxes,
+                    ha='right', va='bottom', fontsize=5, color='white',
+                )
+
+                axes[0, ist].set_title(
+                    _station_code(self.stations[ist]).split('.')[-1], fontsize=9,
+                )
+                if ist == 0:
+                    axes[ic, ist].set_ylabel(comps[ic], fontsize=9)
+                if ic == nc - 1:
+                    axes[ic, ist].set_xlabel('Time (s)')
+
+        plt.tight_layout()
+        plt.savefig(figname, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Saved → {figname}")
 
 
 # ---------------------------------------------------------------------------
