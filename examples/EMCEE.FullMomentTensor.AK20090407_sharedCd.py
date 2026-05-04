@@ -12,6 +12,9 @@ Two normalised covariance matrices are estimated from the pre-event noise:
   C_dh — shared across all horizontal (R/T) seismograms
 
 Noise model: two_attenuated_cosine
+
+Quick notes: Because the inversion use shared memory way to handle the Cd data,
+before the inversion, use 'ulimit -n unlimited' to increase the maximum number of open files.
 """
 
 import os
