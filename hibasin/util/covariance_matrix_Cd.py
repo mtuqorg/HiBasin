@@ -145,17 +145,62 @@ class covariance_matrix_Cd:
                       (1-b) * np.exp(-abs_lag / re2) * np.cos(2*np.pi*abs_lag / L2))
         return cov_matrix
 
+    def _fit_two_attenuated_cosine(self, acf_1d, label=''):
+        """
+        Multi-start curve_fit for the two-attenuated-cosine ACF model.
+
+        Fits over the first npts_acf_lag samples.  Tries five starting points
+        and keeps the solution with the lowest residual SSE.  Consistent with
+        covariance_matrix_shared_Cd._fit_two_attenuated_cosine.
+
+        Returns (b, re1, L1, re2, L2).
+        """
+        lags  = np.arange(self.npts_acf_lag) * self.dt
+        target = acf_1d[:self.npts_acf_lag]
+        T_sig  = self.npts_acf_lag * self.dt
+        re_max = T_sig / 3.0
+        bounds = ([0, 1e-6, 1e-6, 1e-6, 1e-6],
+                  [1, re_max, np.inf, re_max, np.inf])
+        p0_list = [
+            [0.5, T_sig * 0.10, T_sig * 0.05, T_sig * 0.10, T_sig * 0.10],
+            [0.5, T_sig * 0.25, T_sig * 0.05, T_sig * 0.05, T_sig * 0.15],
+            [0.7, T_sig * 0.05, T_sig * 0.05, T_sig * 0.25, T_sig * 0.10],
+            [0.3, T_sig * 0.20, T_sig * 0.10, T_sig * 0.10, T_sig * 0.05],
+            [0.5, T_sig * 0.30, T_sig * 0.05, T_sig * 0.10, T_sig * 0.20],
+        ]
+        best_popt = None
+        best_res  = np.inf
+        for p0 in p0_list:
+            try:
+                popt, _ = curve_fit(two_atcosine_func, lags, target,
+                                    p0=p0, bounds=bounds, maxfev=10000)
+                res = np.sum((target - two_atcosine_func(lags, *popt)) ** 2)
+                if res < best_res:
+                    best_res  = res
+                    best_popt = popt
+            except RuntimeError:
+                continue
+        if best_popt is None:
+            tag = f' ({label})' if label else ''
+            print(f'WARNING: two_attenuated_cosine fit failed{tag}. '
+                  'All initial guesses diverged. '
+                  'Falling back to first p0 — covariance matrix will be approximate.')
+            best_popt = p0_list[0]
+        return tuple(best_popt)
+
     def get_covariance_matrix(self):
         cov_d = np.empty((self.ns, self.nc, self.npts_acf_lag, self.npts_acf_lag))
 
         if self.noise_model == 'exponential':
-            ## Calculate the covariance matrix for exponential decay noise model
-            #acf for all stations and components
-            acf = self.get_acf()
-            time = np.arange(self.nt) * self.dt
+            acf  = self.get_acf()
+            lags = np.arange(self.npts_acf_lag) * self.dt
             for s in range(self.ns):
                 for c in range(self.nc):
-                    re, _ = curve_fit(exp_func, time, acf[s,c])
+                    try:
+                        re, _ = curve_fit(exp_func, lags, acf[s, c, :self.npts_acf_lag],
+                                          p0=[0.1], maxfev=5000)
+                    except RuntimeError:
+                        re = [0.1]
                     cov_d[s, c] = self.calc_exponential_cd(re[0])
             
             return cov_d
@@ -168,25 +213,11 @@ class covariance_matrix_Cd:
           
             return cov_d
         elif self.noise_model == 'two_attenuated_cosine':
-            ## Fit two attenuated cosine ACF model and build covariance matrix
             acf = self.get_acf()
-            time = np.arange(self.nt) * self.dt
-            # Cap re1/re2 so exp(-T_sig/re) <= exp(-3) ~ 0.05 at the end of
-            # the signal window, forcing decay to near-zero (Mustać & Tkalčić).
-            T_sig  = self.npts_acf_lag * self.dt
-            re_max = T_sig / 4.0
-            p0 = [0.5, T_sig*0.1, T_sig*0.05, T_sig*0.1, T_sig*0.1]
-            bounds = ([0, 1e-6, 1e-6, 1e-6, 1e-6],
-                      [1, re_max, np.inf, re_max, np.inf])
             for s in range(self.ns):
                 for c in range(self.nc):
-                    try:
-                        popt, _ = curve_fit(two_atcosine_func, time, acf[s, c],
-                                            p0=p0, bounds=bounds, maxfev=10000)
-                    except RuntimeError:
-                        # fall back to initial guess if fit fails
-                        popt = p0
-                    b, re1, L1, re2, L2 = popt
+                    label = f'{self.stations[s].network}.{self.stations[s].station} {self.components[c]}'
+                    b, re1, L1, re2, L2 = self._fit_two_attenuated_cosine(acf[s, c], label)
                     cov_d[s, c] = self.calc_two_attenuated_cosine_cd(b, re1, L1, re2, L2)
 
             return cov_d
@@ -250,18 +281,9 @@ class covariance_matrix_Cd:
             axes[i].plot(time_ax, np.zeros(self.npts_acf_lag), '--', color='gray', linewidth=1)
 
         if self.noise_model == 'two_attenuated_cosine':
-            time_full = np.arange(self.nt) * self.dt
-            T_sig  = self.npts_acf_lag * self.dt
-            re_max = T_sig / 4.0
-            p0     = [0.5, T_sig*0.1, T_sig*0.05, T_sig*0.1, T_sig*0.1]
-            bounds = ([0, 1e-6, 1e-6, 1e-6, 1e-6], [1, re_max, np.inf, re_max, np.inf])
             for ist in range(self.ns):
                 for ic in range(self.nc):
-                    try:
-                        popt, _ = curve_fit(two_atcosine_func, time_full, acf_full[ist, ic],
-                                            p0=p0, bounds=bounds, maxfev=10000)
-                    except RuntimeError:
-                        popt = p0
+                    popt = self._fit_two_attenuated_cosine(acf_full[ist, ic])
                     axes[ic].plot(time_ax, two_atcosine_func(time_ax, *popt),
                                   'k--', lw=1.2)
         elif self.noise_model == 'exponential':
