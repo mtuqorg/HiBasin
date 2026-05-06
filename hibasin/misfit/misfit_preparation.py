@@ -51,6 +51,12 @@ def to_numpy_arrays(mtuq_data, mtuq_greens):
             if not np.any(data[_i, _j]):
                 #1: exclude this component in likelihood calculation, 0: include this component in likelihood calculation
                 weight_mask[_i, _j] = 1
+    
+    # This part is required to force the call of _get_greens in level2.py to re-compute everthing.
+    # This is about mechanism of mtuq cache handling.
+    for s in range(ns):
+        if hasattr(mtuq_greens[s], 'components'):
+            del mtuq_greens[s].components
 
     return data, greens, weight_mask
 
