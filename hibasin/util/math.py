@@ -76,6 +76,7 @@ def MT6toMT9(mt):
     mt9[2,:] = np.array([mt[4], mt[5], mt[2]])
     return mt9
 
+##The following functions were developped by Son Pham (son.pham@anu.edu.au)
 def MT9toNatural(mt9):
     pyrocko_mt = MomentTensor(m=mt9)
     eigenvals = pyrocko_mt.eigenvals()
