@@ -36,9 +36,9 @@ class _MCMC_Base:
     shared memory management, MCMC sampling, and diagnostics.
 
     Subclasses must implement:
-        _params_to_mij(m)  – convert sampled vector to source parameters
-        get_solution(...)  – extract physical source solution from chains
-        save_chains(...)   – save and transform sampled chains to disk
+        _params_to_mij(m)  - convert sampled vector to source parameters
+        get_solution(...)  - extract physical source solution from chains
+        save_chains(...)   - save and transform sampled chains to disk
     """
 
     _apply_m00 = False  # set True in subclasses that pre-scale greens by M00
@@ -425,18 +425,51 @@ class MCMC_TT2015(_MCMC_Base):
     """
     MCMC solver using Tape & Tape (2015) lune parameterization.
 
-    Sampled parameters (ne=6): v, w, kappa, sigma, h, Mw (encoded).
+    All sampled parameters use the same MAXVAL encoding as the base class
+    (m ∈ [-MAXVAL, MAXVAL]), keeping parameter scales consistent so that
+    emcee's stretch move works well.
+
+    Sampled dimensions (ne=6): m[0..5] ∈ [-MAXVAL, MAXVAL] encode
+      v       ∈ [-1/3,   1/3]    — lune longitude (ISO fraction)
+      w       ∈ [-3π/8, 3π/8]   — lune latitude  (CLVD fraction)
+      kappa   ∈ [0,     360]     — strike (degrees)
+      sigma   ∈ [-90,    90]     — rake   (degrees)
+      h       ∈ [0,       1]     — cos(dip)
+      Mw      ∈ [mw_min, mw_max] — moment magnitude
+
     Also supports deviatoric (ne=5, w fixed to 0) and DC (ne=4, v=w=0)
     in get_solution and save_chains for chains produced by external means.
+
+    Citation:
+    Tape, W., & Tape, C. (2015). A uniform parametrization of moment tensors.
+      Geophysical Journal International, 202(3), 2074-2081.
+
+    Parameters
+    ----------
+    mw_min, mw_max : float
+        Moment-magnitude search range.  Defaults: mw_min=4.0, mw_max=6.0.
+        The encoded dimension m[-1] ∈ [-MAXVAL, MAXVAL] maps linearly to
+        [mw_min, mw_max].
     """
 
+    def __init__(self, *args, mw_min=4.0, mw_max=6.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        if mw_min >= mw_max:
+            raise ValueError(f'mw_min ({mw_min}) must be less than mw_max ({mw_max})')
+        self.mw_min = mw_min
+        self.mw_max = mw_max
+
+    def _decode_mw(self, val):
+        """Map encoded value(s) in [-MAXVAL, MAXVAL] to Mw in [mw_min, mw_max]."""
+        return (val + self.MAXVAL) / self.MAXVAL2 * (self.mw_max - self.mw_min) + self.mw_min
+
     def _params_to_mij(self, m):
-        v = m[0] / 10800
-        w = m[1] * np.pi / 9600
+        v     = m[0] / 10800
+        w     = m[1] * np.pi / 9600
         kappa = (m[2] + self.MAXVAL) / 20       # [0, 360]
-        sigma = m[3] / 40                        # [-90, 90]
-        h = (m[4] + self.MAXVAL) / 7200          # cos(dip)
-        rho = to_rho((m[5] + self.MAXVAL) / 3600 + 4)  # Mw 4-6
+        sigma = m[3] / 40                       # [-90, 90]
+        h     = (m[4] + self.MAXVAL) / 7200     # [0, 1]
+        rho   = to_rho(self._decode_mw(m[5]))
         return to_mij(rho, v, w, kappa, sigma, h)
 
     def get_solution(self, emcee_sampler, warm_up_steps, thin):
@@ -444,27 +477,27 @@ class MCMC_TT2015(_MCMC_Base):
         print('\nNumber of quasi-independent samples: %d' % flat_samples.shape[0])
         m_sol = np.mean(flat_samples, axis=0)
 
-        if self.ne == 6:  # full MT
-            v = m_sol[0] / 10800
-            w = m_sol[1] * np.pi / 9600
+        if self.ne == 6:
+            v     = m_sol[0] / 10800
+            w     = m_sol[1] * np.pi / 9600
             kappa = (m_sol[2] + self.MAXVAL) / 20
             sigma = m_sol[3] / 40
-            h = (m_sol[4] + self.MAXVAL) / 7200
-            rho = to_rho((m_sol[5] + self.MAXVAL) / 3600 + 4)
-        elif self.ne == 5:  # deviatoric (w=0)
-            v = m_sol[0] / 10800
-            w = 0
+            h     = (m_sol[4] + self.MAXVAL) / 7200
+            rho   = to_rho(self._decode_mw(m_sol[5]))
+        elif self.ne == 5:
+            v     = m_sol[0] / 10800
+            w     = 0.0
             kappa = (m_sol[1] + self.MAXVAL) / 20
             sigma = m_sol[2] / 40
-            h = (m_sol[3] + self.MAXVAL) / 7200
-            rho = to_rho((m_sol[4] + self.MAXVAL) / 3600 + 4)
+            h     = (m_sol[3] + self.MAXVAL) / 7200
+            rho   = to_rho(self._decode_mw(m_sol[4]))
         else:  # DC (v=w=0), ne=4
-            v = 0
-            w = 0
+            v     = 0.0
+            w     = 0.0
             kappa = (m_sol[0] + self.MAXVAL) / 20
             sigma = m_sol[1] / 40
-            h = (m_sol[2] + self.MAXVAL) / 7200
-            rho = to_rho((m_sol[3] + self.MAXVAL) / 3600 + 4)
+            h     = (m_sol[2] + self.MAXVAL) / 7200
+            rho   = to_rho(self._decode_mw(m_sol[3]))
 
         source_solution = UnstructuredGrid(
             dims=('rho', 'v', 'w', 'kappa', 'sigma', 'h'),
@@ -484,7 +517,7 @@ class MCMC_TT2015(_MCMC_Base):
                 (flat[:, 2] + self.MAXVAL) / 20,
                 flat[:, 3] / 40,
                 (flat[:, 4] + self.MAXVAL) / 7200,
-                to_rho_vec((flat[:, 5] + self.MAXVAL) / 3600 + 4)
+                to_rho_vec(self._decode_mw(flat[:, 5])),
             ))
         elif self.ne == 5:
             flat[:, :5] = np.column_stack((
@@ -492,14 +525,14 @@ class MCMC_TT2015(_MCMC_Base):
                 (flat[:, 1] + self.MAXVAL) / 20,
                 flat[:, 2] / 40,
                 (flat[:, 3] + self.MAXVAL) / 7200,
-                to_rho_vec((flat[:, 4] + self.MAXVAL) / 3600 + 4)
+                to_rho_vec(self._decode_mw(flat[:, 4])),
             ))
         elif self.ne == 4:
             flat[:, :4] = np.column_stack((
                 (flat[:, 0] + self.MAXVAL) / 20,
                 flat[:, 1] / 40,
                 (flat[:, 2] + self.MAXVAL) / 7200,
-                to_rho_vec((flat[:, 3] + self.MAXVAL) / 3600 + 4)
+                to_rho_vec(self._decode_mw(flat[:, 3])),
             ))
 
         flat = self._transform_noise_timeshift_chains(flat)
@@ -510,14 +543,36 @@ class MCMC_Tashiro(_MCMC_Base):
     """
     MCMC solver using Tashiro parameterization for full moment tensor inversion.
 
-    Sampled parameters (ne=6): x1–x5 in (-MAXVAL, MAXVAL) mapped to (0,1),
-    and x6 encoding Mw in (4, 6).
+    Sampled parameters (ne=6): x1-x5 in (-MAXVAL, MAXVAL) mapped to (0,1),
+    and x6 encoding Mw in (mw_min, mw_max).
+
+    Citation:
+    Stähler, S. C., & Sigloch, K. (2014). Fully probabilistic seismic source inversion - Part 1: 
+      Efficient parameterisation. Solid Earth, 5(2), 1055-1069.
+
+    Parameters
+    ----------
+    mw_min, mw_max : float
+        Moment-magnitude search range.  Defaults: mw_min=4.0, mw_max=6.0.
+        The encoded dimension m[5] in [-MAXVAL, MAXVAL] maps linearly to
+        [mw_min, mw_max].
     """
+
+    def __init__(self, *args, mw_min=4.0, mw_max=6.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        if mw_min >= mw_max:
+            raise ValueError(f'mw_min ({mw_min}) must be less than mw_max ({mw_max})')
+        self.mw_min = mw_min
+        self.mw_max = mw_max
+
+    def _decode_mw(self, val):
+        """Map encoded value(s) in [-MAXVAL, MAXVAL] to Mw in [mw_min, mw_max]."""
+        return (val + self.MAXVAL) / self.MAXVAL2 * (self.mw_max - self.mw_min) + self.mw_min
 
     def _params_to_mij(self, m):
         mc = m[:6].copy()
         mc[:5] = (mc[:5] + self.MAXVAL) / self.MAXVAL2  # x_i -> (0, 1)
-        mc[5] = (mc[5] + self.MAXVAL) / self.MAXVAL + 4  # Mw 4-6
+        mc[5] = self._decode_mw(m[5])
         return ned2rtp(Tashiro2MT6(mc))
 
     def get_solution(self, emcee_sampler, warm_up_steps, thin):
@@ -525,8 +580,8 @@ class MCMC_Tashiro(_MCMC_Base):
         print('\nNumber of quasi-independent samples: %d' % flat_samples.shape[0])
         m_sol = np.mean(flat_samples, axis=0)
 
-        xi = (self.MAXVAL + m_sol[:5]) / self.MAXVAL2       # (0, 1)
-        mw = (self.MAXVAL + m_sol[5]) / self.MAXVAL + 4     # Mw 4-6
+        xi = (self.MAXVAL + m_sol[:5]) / self.MAXVAL2
+        mw = self._decode_mw(m_sol[5])
         mij = ned2rtp(Tashiro2MT6(np.concatenate([xi, [mw]])))
         rho, v, w, kappa, sigma, h = to_lune(mij)
 
@@ -540,8 +595,8 @@ class MCMC_Tashiro(_MCMC_Base):
     def save_chains(self, sampler, file_path='./', thin=1):
         flat = sampler.get_chain(discard=0, thin=thin, flat=True)
         flat[:, :6] = np.column_stack((
-            (self.MAXVAL + flat[:, :5]) / self.MAXVAL2,    # x_i -> (0, 1)
-            (self.MAXVAL + flat[:, 5]) / self.MAXVAL + 4   # Mw 4-6
+            (self.MAXVAL + flat[:, :5]) / self.MAXVAL2,
+            self._decode_mw(flat[:, 5])
         ))
         flat = self._transform_noise_timeshift_chains(flat)
         self._save_chains_core(sampler, flat, file_path, 'tashiro', thin)
