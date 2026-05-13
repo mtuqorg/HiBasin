@@ -28,6 +28,7 @@ setuptools.setup(
         "numpy<2",
         "corner",
         "pyrocko",
+        "basemap",
     ],
     packages=setuptools.find_packages(),
 )
