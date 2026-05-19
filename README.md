@@ -23,6 +23,12 @@ pip install -e .
 Read the MTUQ documentation for [Acquiring seismic data](https://mtuqorg.github.io/mtuq/user_guide/02.html), [Acquiring Green's functions](https://mtuqorg.github.io/mtuq/user_guide/03.html), and [Data  processing](https://mtuqorg.github.io/mtuq/user_guide/04.html). Note that, at least one-hour long pre-event ambient noise should be included in the downloaded seismic data. A cutting noise window will be used to estimate the noise. 
 
 ## Examples
+Note: Before running any correlated noise or model error case, execute the following in your terminal:
+```shell 
+ulimit -n unlimited
+``` 
+This is required because the implementation uses multiprocessing.shared_memory to reduce memory shared by hundreds of chains, which demands a large number of open file descriptors.
+
 1. Full moment tensor inversion using HiBasin for a tectonic earthquake.
 
    >|  uncorrelated noise treatment     |     correlated noise treatment        |
