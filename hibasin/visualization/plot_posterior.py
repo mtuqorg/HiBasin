@@ -36,7 +36,7 @@ from pyrocko.moment_tensor import MomentTensor
 from mtuq.util.math import to_delta_gamma,to_Mw
 from mtuq.misfit.waveform import level2 as level2
 from mtuq.event import MomentTensor as MT_mtuq
-from hibasin.util.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned, mt2lune
+from hibasin.util.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned, mt2lune, ensemble_uncertainty, ensemble_mt_decomposition
 from hibasin.visualization.lune_diagram import PlotLuneFrame
 
 myfunc = np.vectorize(mt2lune)
@@ -184,7 +184,7 @@ def posterior_distribution_tt2015(source_type, flat_samples_fname, log_prob_fnam
     plt.savefig(figure_fname)
     plt.close()
     
-def posterior_distribution_mij(flat_samples_fname, log_prob_fname, mt_degree, thin, ratio, figure_fname):
+def posterior_distribution_mij(flat_samples_fname, log_prob_fname, mt_degree, thin, ratio, figure_fname, decompose=False):
     ##read the samples and log_likelihood from two .npy files 
     flat_samples = np.load(flat_samples_fname)
     log_prob = np.load(log_prob_fname)
@@ -198,18 +198,20 @@ def posterior_distribution_mij(flat_samples_fname, log_prob_fname, mt_degree, th
     
     #convert to lune coordinates
     if mt_degree == 6:
-        labels = ['$M_{xx}$', '$M_{yy}$', '$M_{zz}$', '$M_{xy}$', '$M_{xz}$', '$M_{yz}$']
+        labels       = ['$M_{xx}$', '$M_{yy}$', '$M_{zz}$', '$M_{xy}$', '$M_{xz}$', '$M_{yz}$']
+        plain_labels = ['Mxx', 'Myy', 'Mzz', 'Mxy', 'Mxz', 'Myz']
         source_samples = rtp2ned2(m6_samples[:,0],m6_samples[:,1],m6_samples[:,2], \
                            m6_samples[:,3],m6_samples[:,4],m6_samples[:,5])
-        # index of column in source_samples for the 6 MT parameters in the order 
+        # index of column in source_samples for the 6 MT parameters in the order
         # of Mxx, Myy, Mzz, Mxy, Mxz, Myz, used for corner plot and mean MT solution
         mt_idx = [0, 1, 2, 3, 4, 5]
 
     elif mt_degree==5:#Deviatoric MT
-        labels = ['$M_{xx}$', '$M_{yy}$', '$M_{xy}$', '$M_{xz}$', '$M_{yz}$']
+        labels       = ['$M_{xx}$', '$M_{yy}$', '$M_{xy}$', '$M_{xz}$', '$M_{yz}$']
+        plain_labels = ['Mxx', 'Myy', 'Mxy', 'Mxz', 'Myz']
         source_samples = rtp2ned2(-(m6_samples[:,0]+m6_samples[:,1]),m6_samples[:,0],m6_samples[:,1],\
                            m6_samples[:,2],m6_samples[:,3],m6_samples[:,4])
-        # index of column in source_samples for the 5 MT parameters in the order of 
+        # index of column in source_samples for the 5 MT parameters in the order of
         # Mxx, Myy, Mxy, Mxz, Myz, used for corner plot and mean MT solution
         mt_idx = [0, 1, 3, 4, 5]
     else:
@@ -222,6 +224,10 @@ def posterior_distribution_mij(flat_samples_fname, log_prob_fname, mt_degree, th
     lon_sol,lat_sol = myfunc(m6_sol[0],m6_sol[1],m6_sol[2], \
                                 m6_sol[3],m6_sol[4],m6_sol[5])
     print('mean mt:', m6_sol)
+    print('--- MT parameters (mean +/- std) ---')
+    ensemble_uncertainty(source_samples[h_num_samples:, mt_idx], labels=plain_labels)
+    if decompose:
+        ensemble_mt_decomposition(source_samples[h_num_samples:])
 
     ##setup colar bar
     norm = matplotlib.colors.Normalize(vmin=0.9*max(log_prob_2), vmax=max(log_prob_2))
@@ -364,8 +370,11 @@ def posterior_distribution_noise(flat_samples_fname, mt_degree, thin, ratio, sta
     h_num_samples = int(ratio*noise.shape[0])
 
     mean_noise = np.mean(noise[h_num_samples:], axis=0)
+    labels       = ['$k_{%s}$' % s.station for s in stations]
+    plain_labels = ['k_%s'     % s.station for s in stations]
     print('mean noise:', mean_noise)
-    labels = ['$k_{%s}$' % s.station for s in stations]
+    print('--- Noise parameters (mean +/- std) ---')
+    ensemble_uncertainty(noise[h_num_samples:], labels=plain_labels)
     titles = ['%.2f' % val for val in mean_noise]
     with matplotlib.rc_context({'font.size': 20}):
         fig = corner.corner(noise[h_num_samples:,:], labels=labels, truths = mean_noise, titles=titles, title_fmt=None, show_titles=True, \
@@ -387,20 +396,23 @@ def posterior_distribution_timeshift(mcmc_solver, thin, ratio, stations, figure_
     if num_tau < ns:
         raise ValueError('wrong number of time shift parameters. It should be at least ns.')
 
-    mean_tau = np.mean(tau[h_num_samples:], axis=0)
-    print('mean timeshifts:', mean_tau)
-
     #generate the scatter plots using corner.corner
     if num_time_shift_groups == 1:
-        # one timeshift for one station
-        labels_raw = ['$\\tau_{%s}$' % s.station for s in stations]
+        labels_raw       = ['$\\tau_{%s}$' % s.station for s in stations]
+        plain_labels_raw = ['tau_%s'        % s.station for s in stations]
     elif num_time_shift_groups == 2:
-        # two timeshifts for one station
-        labels_raw = ['$\\tau{%s}_{%s}$' % (i, s.station) for s in stations for i in (1, 2)]
+        labels_raw       = ['$\\tau{%s}_{%s}$' % (i, s.station) for s in stations for i in (1, 2)]
+        plain_labels_raw = ['tau%s_%s'          % (i, s.station) for s in stations for i in (1, 2)]
     else:
         raise ValueError('Wrong num_time_shift_groups.')
 
-    labels = [lbl for lbl, keep in zip(labels_raw, mcmc_solver.timeshift_mask) if keep]
+    labels       = [lbl for lbl, keep in zip(labels_raw,       mcmc_solver.timeshift_mask) if keep]
+    plain_labels = [lbl for lbl, keep in zip(plain_labels_raw, mcmc_solver.timeshift_mask) if keep]
+
+    mean_tau = np.mean(tau[h_num_samples:], axis=0)
+    print('mean timeshifts:', mean_tau)
+    print('--- Time shift parameters (mean +/- std) [s] ---')
+    ensemble_uncertainty(tau[h_num_samples:], labels=plain_labels)
 
     titles = ['%.2f' % val for val in mean_tau]
     with matplotlib.rc_context({'font.size': 20}):
