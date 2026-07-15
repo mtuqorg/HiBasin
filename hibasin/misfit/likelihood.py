@@ -294,6 +294,7 @@ class _MCMC_Base:
         return noise, tau_full
 
     def _transform_noise_timeshift_chains(self, samples):
+        samples = samples.copy()
         samples[:, self.ne:self.ne + self.ns] = (
             samples[:, self.ne:self.ne + self.ns] * self.noise_scale1 + self.noise_scale2)
         if not self.no_time_shift:
