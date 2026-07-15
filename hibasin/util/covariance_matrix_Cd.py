@@ -260,7 +260,7 @@ class covariance_matrix_Cd:
         plt.savefig(figname, dpi=300)
         plt.close()
 
-    def plot_auto_corr_func(self, figname='acf.png'):
+    def plot_auto_corr_func(self, figname='acf.png', legend=True):
         acf_full = self.get_acf()                            # (ns, nc, nt)
         acf      = acf_full[:, :, :self.npts_acf_lag]
         time_ax  = np.arange(self.npts_acf_lag) * self.dt
@@ -274,8 +274,10 @@ class covariance_matrix_Cd:
                 axes[ic].text(10, 0.75, self.components[ic])
             axes[2].set_xlabel('Lag (s)', fontsize=12)
             axes[1].set_ylabel('Autocorrelation', fontsize=12)
-            axes[2].legend([s.network + '.' + s.station for s in self.stations],
-                           loc='lower right', ncol=3, fontsize=9)
+
+            if legend:
+                axes[2].legend([s.network + '.' + s.station for s in self.stations],
+                               loc='lower right', ncol=3, fontsize=9)
 
         for i in range(3):
             axes[i].plot(time_ax, np.zeros(self.npts_acf_lag), '--', color='gray', linewidth=1)

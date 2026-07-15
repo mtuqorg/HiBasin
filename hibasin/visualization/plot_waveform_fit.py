@@ -38,10 +38,11 @@ from mtuq.util.math import to_delta_gamma,to_Mw
 from mtuq.misfit.waveform import level2 as level2
 from mtuq.event import MomentTensor as MT_mtuq
 import sys
-from hibasin.util.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned
+from hibasin.util.math import to_lune, Tashiro2MT6,Tashiro2MT6_vec,ned2rtp, rtp2ned2, rtp2ned, ensemble_mt_decomposition
 
 def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
-                      delta=1, evdp_in_km=33, components=None):
+                      delta=1, evdp_in_km=33, components=None,
+                      flat_samples_fname=None, mt_degree=6, M00=1.0, ratio=0.5, thin_decomp=10):
     ns,nc,ne,nt = greens.shape
     print(data.shape, greens.shape)
 
@@ -137,6 +138,16 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
     c_ISO, c_DC, c_CLVD = 100*mt_decom[0][1], 100*mt_decom[1][1], 100*mt_decom[2][1]
     mw = MT_mtuq(mij_sol).magnitude()
 
+    std_ISO = std_DC = std_CLVD = None
+    if flat_samples_fname is not None:
+        raw      = np.load(flat_samples_fname)
+        n_warmup = int(ratio * raw.shape[0])
+        mij_rtp  = raw[n_warmup:, :mt_degree] * M00
+        ned      = rtp2ned2(mij_rtp[:, 0], mij_rtp[:, 1], mij_rtp[:, 2],
+                            mij_rtp[:, 3], mij_rtp[:, 4], mij_rtp[:, 5])
+        fracs    = ensemble_mt_decomposition(ned, thin=thin_decomp)
+        std_ISO, std_DC, std_CLVD = np.std(fracs, axis=0)
+
     ax_dev = fig.add_subplot(gs0[0], frame_on=False, aspect='equal', xticks=[], yticks=[])
     beachball.plot_beachball_mpl( mt.m6(), ax_dev, beachball_type='deviatoric',\
         size=8*mw, position=(0.5,.5),\
@@ -159,10 +170,15 @@ def plot_waveform_fit(mij_sol, data, greens, stations, noise, tau, figure_fname,
     vr = 1 - np.sum(diff**2) / obs_data2_sum
 
     ax_txt = fig.add_subplot(gs0[1], frame_on=False, aspect='equal', xticks=[], yticks=[])
-    ax_txt.text(-.5,0.1,'Depth = %.1f km, Mw = %.2f' % (evdp_in_km, mw), fontsize=10)
-    ax_txt.text(-.5,0.25,'Percent DC = %.1f' % c_DC, fontsize=10)
-    ax_txt.text(-.5,0.4,'Percent CLVD = %.1f' % c_CLVD, fontsize=10)
-    ax_txt.text(-.5,0.55,'Percent ISO = %.1f' % c_ISO, fontsize=10)
-    ax_txt.text(-.5,0.7,'VR = %1.1f%%' % (vr*100), fontsize=10)
+    ax_txt.text(-.5, 0.1, 'Depth = %.1f km, Mw = %.2f' % (evdp_in_km, mw), fontsize=10)
+    ax_txt.text(-.5, 0.7, 'VR = %1.1f%%' % (vr * 100), fontsize=10)
+    if std_ISO is not None:
+        ax_txt.text(-.5, 0.25, 'DC = %.1f±%.1f%%'   % (c_DC,   std_DC),   fontsize=10)
+        ax_txt.text(-.5, 0.4,  'CLVD = %.1f±%.1f%%' % (c_CLVD, std_CLVD), fontsize=10)
+        ax_txt.text(-.5, 0.55, 'ISO = %.1f±%.1f%%'  % (c_ISO,  std_ISO),  fontsize=10)
+    else:
+        ax_txt.text(-.5, 0.25, 'Percent DC = %.1f%%'   % c_DC,   fontsize=10)
+        ax_txt.text(-.5, 0.4,  'Percent CLVD = %.1f%%' % c_CLVD, fontsize=10)
+        ax_txt.text(-.5, 0.55, 'Percent ISO = %.1f%%'  % c_ISO,  fontsize=10)
     plt.savefig(figure_fname, bbox_inches='tight', dpi=300)
     plt.close()

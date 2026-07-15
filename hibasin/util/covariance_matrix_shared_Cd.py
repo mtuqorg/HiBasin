@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import toeplitz, cholesky, solve_triangular
 from scipy.optimize import curve_fit
+from hibasin.util.acf_fit_hypersweep import fit_two_attenuated_cosine_hypersweep
 import matplotlib
 import matplotlib.pyplot as plt
 from mtuq.misfit.waveform import level2
@@ -63,7 +64,8 @@ class covariance_matrix_shared_Cd:
 
     def __init__(self, origin, data_noise, npts_acf_lag, process_data,
                  noise_length=3600, noise_model='two_attenuated_cosine',
-                 offset_t0=0, component_grouping='vertical_horizontal'):
+                 offset_t0=0, component_grouping='vertical_horizontal',
+                 fit_method='curve_fit'):
         """
         Parameters
         ----------
@@ -92,8 +94,13 @@ class covariance_matrix_shared_Cd:
             raise ValueError(
                 f"component_grouping '{component_grouping}' is not supported. "
                 "Use 'vertical_horizontal' or 'rayleigh_love'.")
+        if fit_method not in ('curve_fit', 'hypersweep'):
+            raise ValueError(
+                f"fit_method '{fit_method}' is not supported. "
+                "Use 'curve_fit' or 'hypersweep'.")
         self.component_grouping = component_grouping
         self.noise_model        = noise_model
+        self.fit_method         = fit_method
         self.npts_acf_lag = npts_acf_lag
         self.nt, self.dt  = level2._get_time_sampling(data_noise)
 
@@ -249,7 +256,11 @@ class covariance_matrix_shared_Cd:
     def _fit_two_attenuated_cosine(self, acf_mean, label=''):
         lags   = np.arange(self.npts_acf_lag) * self.dt
         target = acf_mean[:self.npts_acf_lag]
-        T_sig  = self.npts_acf_lag * self.dt   # signal window length
+        T_sig  = self.npts_acf_lag * self.dt
+
+        if self.fit_method == 'hypersweep':
+            return fit_two_attenuated_cosine_hypersweep(
+                lags, target, T_sig=T_sig)   # signal window length
         # Cap re1/re2 so that exp(-T_sig/re) <= exp(-3) ~ 0.05 at the
         # end of the lag window, forcing the ACF model to decay to near-zero
         # within the signal window (Mustać & Tkalčić 2016/2017).
@@ -406,7 +417,7 @@ class covariance_matrix_shared_Cd:
         plt.savefig(figname, dpi=300)
         plt.close()
 
-    def plot_auto_corr_func(self, figname='acf.png'):
+    def plot_auto_corr_func(self, figname='acf.png', legend=True):
         acf = self.get_acf()[:, :, :self.npts_acf_lag]
         time_ax = np.arange(self.npts_acf_lag) * self.dt
 
@@ -419,9 +430,10 @@ class covariance_matrix_shared_Cd:
                 axes[ic].text(10, 0.75, self.components[ic])
             axes[2].set_xlabel('Lag (s)', fontsize=12)
             axes[1].set_ylabel('Autocorrelation', fontsize=12)
-            axes[2].legend(
-                [s.network + '.' + s.station for s in self.stations],
-                loc='lower right', ncol=3, fontsize=9)
+            if legend:
+                axes[2].legend(
+                    [s.network + '.' + s.station for s in self.stations],
+                    loc='lower right', ncol=3, fontsize=9)
         for i in range(3):
             axes[i].plot(time_ax, np.zeros(self.npts_acf_lag), '--',
                          color='gray', linewidth=1)

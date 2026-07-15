@@ -9,6 +9,7 @@ from netCDF4 import Dataset
 import pyrocko.moment_tensor as mtm
 from pyrocko.moment_tensor import MomentTensor
 from scipy.linalg import cholesky, solve_triangular
+from scipy.signal import correlate
 from mtuq.util.math import to_mij, to_rho, to_v_w,to_M0
 import sys
 if not sys.warnoptions:
@@ -370,6 +371,118 @@ def calc_InversionDeterminant_cd(cov_d):
             cov_inv[ist,ic] = np.matmul(covL_inv.T, covL_inv)
             log_cov_det[ist,ic] = factor
     return cov_inv, log_cov_det
+
+def ensemble_uncertainty(samples, labels=None):
+    """
+    Compute and print mean ± std for each parameter in a posterior ensemble.
+
+    Parameters
+    ----------
+    samples : array-like, shape (n_samples,) or (n_samples, n_params)
+        Posterior samples. Can be MT components, noise amplitudes, or time shifts.
+    labels : list of str, optional
+        Parameter names, one per column. Defaults to 'param_0', 'param_1', ...
+
+    Returns
+    -------
+    means : ndarray, shape (n_params,)
+    stds  : ndarray, shape (n_params,)
+    """
+    samples = np.atleast_2d(np.asarray(samples, dtype=float))
+    if samples.shape[0] == 1:
+        samples = samples.T        # handle 1-D input passed as row vector
+    n_params = samples.shape[1]
+
+    if labels is None:
+        labels = ['param_%d' % i for i in range(n_params)]
+
+    means = np.mean(samples, axis=0)
+    stds  = np.std(samples,  axis=0)
+
+    max_label_len = max(len(l) for l in labels)
+    for lbl, mu, sigma in zip(labels, means, stds):
+        print('  %-*s  %g ± %g' % (max_label_len, lbl, mu, sigma))
+
+    return means, stds
+
+
+def ensemble_mt_decomposition(samples_ned, thin=10):
+    """
+    Decompose each MT sample in a posterior ensemble into ISO, CLVD, and DC
+    components using pyrocko's standard decomposition, then report
+    mean ± std of each fraction and moment.
+
+    Parameters
+    ----------
+    samples_ned : array-like, shape (n_samples, 6)
+        MT samples in NED convention: [Mxx, Myy, Mzz, Mxy, Mxz, Myz],
+        as returned by rtp2ned / rtp2ned2.
+    thin : int
+        Use every `thin`-th sample to keep computation manageable.
+
+    Returns
+    -------
+    fracs : ndarray, shape (n_used, 3)
+        Columns: [ISO %, DC %, CLVD %] for each (thinned) sample.
+    """
+    samples = np.asarray(samples_ned, dtype=float)[::thin]
+    n = samples.shape[0]
+
+    fracs   = np.zeros((n, 3))   # ISO %, DC %, CLVD %
+    moments = np.zeros((n, 3))   # ISO, DC, CLVD scalar moments (N-m)
+
+    for i in range(n):
+        mt = MomentTensor.from_values(samples[i])
+        d  = mt.standard_decomposition()
+        fracs[i]   = [100 * d[0][1], 100 * d[1][1], 100 * d[2][1]]
+        moments[i] = [d[0][0],       d[1][0],        d[2][0]]
+
+    print('--- MT decomposition: fractions (mean +/- std) [%] ---')
+    ensemble_uncertainty(fracs,   labels=['ISO', 'DC', 'CLVD'])
+    print('--- MT decomposition: scalar moments (mean +/- std) [N-m] ---')
+    ensemble_uncertainty(moments, labels=['ISO', 'DC', 'CLVD'])
+
+    return fracs
+
+
+def cc_optimal_shifts(solver, ref_mij):
+    """
+    Compute cross-correlation optimal time shift per station and component
+    group using a reference moment tensor.
+
+    Returns tau_cc of shape (time_shift_groups * ns,) in physical seconds,
+    interleaved as [ZR_0, T_0, ZR_1, T_1, ...] for time_shift_groups=2,
+    clipped to [time_shift_min, time_shift_max].
+    """
+    pred   = np.einsum('scet,e->sct', solver.greens, ref_mij)
+    n_grps = solver.time_shift_groups
+    tau    = np.zeros(n_grps * solver.ns)
+
+    for s in range(solver.ns):
+        cc_zr    = np.zeros(2 * solver.nt - 1)
+        n_active = 0
+        for c in range(min(2, solver.nc)):
+            if not solver.weight_mask[s, c]:
+                cc_zr    += correlate(solver.obs[s, c], pred[s, c], mode='full')
+                n_active += 1
+        shift_zr = float(
+            (cc_zr.argmax() - (solver.nt - 1)) * solver.delta
+            if n_active > 0 else 0.0)
+        shift_zr = float(np.clip(shift_zr, solver.time_shift_min, solver.time_shift_max))
+
+        if n_grps == 1:
+            tau[s] = shift_zr
+        else:
+            tau[2 * s] = shift_zr
+            shift_t = 0.0
+            if solver.nc > 2 and not solver.weight_mask[s, 2]:
+                cc_t    = correlate(solver.obs[s, 2], pred[s, 2], mode='full')
+                shift_t = float((cc_t.argmax() - (solver.nt - 1)) * solver.delta)
+                shift_t = float(np.clip(shift_t, solver.time_shift_min, solver.time_shift_max))
+            tau[2 * s + 1] = shift_t
+
+    return tau
+
 
 def calcInversionDeterminant(cov_d):
     #- Diagonal data covariance matrices for each component
