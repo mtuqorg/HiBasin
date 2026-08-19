@@ -356,7 +356,7 @@ def _run_cps_one_model(mod_path, model_dir, dfile_path, station_codes, evdp_km):
     # -D = displacement output, -i = impulse source
     hpulse_out = os.path.join(depth_dir, 'hpulse96.out')
     with open(hpulse_out, 'wb') as fout:
-        _run(['hpulse96', '-D', '-i'], stdout=fout)
+        _run(['hpulse96', '-V', '-p -l 1'], stdout=fout)
 
     # fsel96 → f96tosac -G: extract per-station GFs and convert to SAC.
     # SAC files are written to depth_dir (cwd), named by the f96 header
