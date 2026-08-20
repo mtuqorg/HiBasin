@@ -321,13 +321,16 @@ def _run_cps_one_model(mod_path, model_dir, dfile_path, station_codes, evdp_km):
     depth_dir = os.path.join(model_dir, depth_str)
     os.makedirs(depth_dir, exist_ok=True)
 
-    # Symlink model file and dfile into the depth directory so CPS can find them
+    # Symlink model file and dfile into the depth directory so CPS can find them.
+    # Always recreate symlinks so a stale link from a previous partial run is
+    # replaced atomically (os.path.lexists follows the link itself, not its target).
     for target, link in [
         (mod_path,   os.path.join(depth_dir, mod_name)),
         (dfile_path, os.path.join(depth_dir, 'dfile')),
     ]:
-        if not os.path.exists(link):
-            os.symlink(target, link)
+        if os.path.lexists(link):
+            os.remove(link)
+        os.symlink(target, link)
 
     def _run(cmd, stdout=None):
         result = subprocess.run(
@@ -353,10 +356,10 @@ def _run_cps_one_model(mod_path, model_dir, dfile_path, station_codes, evdp_km):
         _run(['hspec96'], stdout=fout)
 
     # hpulse96: convert spectra to time-domain displacement seismograms
-    # -D = displacement output, -i = impulse source
+    # -V = velocity output, -p = parabolic pulse, -l 1 = pulse length 1
     hpulse_out = os.path.join(depth_dir, 'hpulse96.out')
     with open(hpulse_out, 'wb') as fout:
-        _run(['hpulse96', '-V', '-p -l 1'], stdout=fout)
+        _run(['hpulse96', '-V', '-p', '-l', '1'], stdout=fout)
 
     # fsel96 → f96tosac -G: extract per-station GFs and convert to SAC.
     # SAC files are written to depth_dir (cwd), named by the f96 header
