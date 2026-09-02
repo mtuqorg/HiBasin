@@ -340,6 +340,43 @@ class covariance_matrix_Cm:
 
         return cov_inv, log_cov_det
 
+    def calc_Cm_eigen(self, mij):
+        """
+        Eigendecomposition of C_m for use with likelihood_Cm.py.
+
+        Returns the eigenvalues and eigenvectors of C_m[s,c] = V Λ Vᵀ so that
+        the exact likelihood for C_total = k_s²σ²I + C_m can be evaluated as:
+
+            rᵀ C_total⁻¹ r  =  Σᵢ (Vᵀr)ᵢ² / (k_s²σ² + λᵢ)
+            log|C_total|    =  Σᵢ log(k_s²σ² + λᵢ)
+
+        k_s² appears only as an additive offset to λᵢ, not as a multiplicative
+        scale on C_m.  This avoids the bias present in calc_InversionDeterminant.
+
+        Parameters
+        ----------
+        mij : ndarray (ne,)
+            Moment tensor in absolute physical units (Nm).
+            For MCMC_FullMij use  mij_abs = mij_sampled * solver.M00.
+
+        Returns
+        -------
+        eigvals : ndarray (ns, nc, nt)
+            Eigenvalues λᵢ of C_m per station and component.
+        eigvecs : ndarray (ns, nc, nt, nt)
+            Eigenvector matrix V (columns are eigenvectors) per station
+            and component.  np.linalg.eigh guarantees V is orthonormal.
+        """
+        C_m = self.calc_Cm(mij)    # (ns, nc, nt, nt)
+        eigvals = np.zeros((self.ns, self.nc, self.nt))
+        eigvecs = np.zeros((self.ns, self.nc, self.nt, self.nt))
+        for s in range(self.ns):
+            for c in range(self.nc):
+                lam, V = np.linalg.eigh(C_m[s, c])
+                eigvals[s, c] = lam
+                eigvecs[s, c] = V
+        return eigvals, eigvecs
+
     # ------------------------------------------------------------------
     # Diagnostics
     # ------------------------------------------------------------------
