@@ -12,7 +12,8 @@ from mtuq.grid import UnstructuredGrid
 from mtuq.misfit.waveform import level2
 from hibasin.util.math import to_lune, Tashiro2MT6, ned2rtp
 from hibasin.util.math import exponential_covariance, calc_InversionDeterminant_cd
-from hibasin.misfit.misfit_preparation import to_numpy_arrays, get_timeshift_mask
+from hibasin.misfit.misfit_preparation import (to_numpy_arrays, get_timeshift_mask,
+                                               get_shift_group_cols)
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -61,12 +62,17 @@ class _MCMC_Base:
         self.ns, self.nc, self.ne, self.nt = self.greens.shape
         _, self.delta = level2._get_time_sampling(data_sw)
 
-        # Map active components to fixed noise_std column order (Z→0, R→1, T→2).
+        # Active components, in the same order as the obs/greens columns.
         # When a component is absent at all stations mtuq drops it from the
-        # component list (nc < 3), so we select only the matching columns.
+        # component list (nc < 3), so all column lookups go by name.
+        self.components = level2._get_components(data_sw)
+        self._zr_cols, self._t_cols = get_shift_group_cols(self.components)
+
+        # Map active components to fixed noise_std column order (Z→0, R→1, T→2).
+        assert noise_std_sw.shape[1] == 3, \
+            "noise_std_sw must be (ns, 3) in Z, R, T order; got %s" % (noise_std_sw.shape,)
         _comp_col = {'Z': 0, 'R': 1, 'T': 2}
-        _active_cols = [_comp_col[c] for c in level2._get_components(data_sw)
-                        if c in _comp_col]
+        _active_cols = [_comp_col[c] for c in self.components if c in _comp_col]
         self.noise_std = noise_std_sw[:, _active_cols].astype(np.float32)
         if not no_time_shift:
             # pad by the maximum possible shift to avoid circular wrapping in phase shift
@@ -82,7 +88,8 @@ class _MCMC_Base:
         assert self.time_shift_groups in [1, 2], \
             "Unsupported number of time shift groups: %d" % self.time_shift_groups
 
-        self.timeshift_mask = get_timeshift_mask(self.weight_mask, self.time_shift_groups)
+        self.timeshift_mask = get_timeshift_mask(self.weight_mask, self.time_shift_groups,
+                                                 self.components)
 
         self.noise_type = noise_type
         if noise_type == 'correlated':
@@ -92,17 +99,14 @@ class _MCMC_Base:
             if self._shared_cov:
                 # Derive group column indices once from data ordering.
                 # level2._get_components always sorts Z before R and T.
-                components = level2._get_components(data_sw)
                 if component_grouping == 'rayleigh_love':
-                    self._group0_cols = np.array(
-                        [i for i, c in enumerate(components) if c in ('Z', 'R')])
-                    self._group1_cols = np.array(
-                        [i for i, c in enumerate(components) if c == 'T'])
+                    self._group0_cols = self._zr_cols
+                    self._group1_cols = self._t_cols
                 else:  # vertical_horizontal
                     self._group0_cols = np.array(
-                        [i for i, c in enumerate(components) if c == 'Z'])
+                        [i for i, c in enumerate(self.components) if c == 'Z'], dtype=int)
                     self._group1_cols = np.array(
-                        [i for i, c in enumerate(components) if c != 'Z'])
+                        [i for i, c in enumerate(self.components) if c != 'Z'], dtype=int)
 
             self.cov_inv_shape = cov_inv.shape
             self.cov_inv_dtype = cov_inv.dtype
@@ -155,8 +159,8 @@ class _MCMC_Base:
         if self.time_shift_groups == 1:
             shift_expanded[:, :] = shift[:, None]
         else:
-            shift_expanded[:, :2] = shift[::2][:, None]
-            shift_expanded[:, 2] = shift[1::2]
+            shift_expanded[:, self._zr_cols] = shift[::2][:, None]
+            shift_expanded[:, self._t_cols] = shift[1::2][:, None]
         phase = np.exp(-1j * self._omega_pad[None, None, :] * shift_expanded[:, :, None])
         shifted = np.real(irfft(rfft(pred_pad, axis=-1) * phase, axis=-1))
         return shifted[:, :, self._pad:self._pad + self.nt]
