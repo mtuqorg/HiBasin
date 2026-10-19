@@ -5,23 +5,35 @@ from mtuq.util.signal import get_components, get_time_sampling
 from mtuq.misfit.waveform import level2 as level2
 from numpy.fft import fft, ifft, fftfreq
 
-def get_timeshift_mask(component_mask, timeshift_group=2):
+def get_shift_group_cols(components):
+    '''
+    Column indices of the ZR and T time-shift groups for the active components.
+    components: active component list from level2._get_components, e.g. ['Z', 'T'].
+                mtuq drops a component absent at all stations, so nc may be 1, 2 or 3.
+    '''
+    zr_cols = np.array([j for j, c in enumerate(components) if c in ('Z', 'R')], dtype=int)
+    t_cols  = np.array([j for j, c in enumerate(components) if c == 'T'], dtype=int)
+    return zr_cols, t_cols
+
+def get_timeshift_mask(component_mask, timeshift_group=2, components=('Z', 'R', 'T')):
     '''
     component_mask: ns x nc array where ns - number of stations, nc - number of component
                     element 0 - keep, 1 - drop
     timeshift_group: 1 - three components share 1 timeshift, or 2 - V/R and T components have own timeshift.
+    components: active component list matching the columns of component_mask.
     shift_mask: flatten 1D array: 2 x ns. e.g., [False, True, True, ...]
-    ''' 
+    '''
+    zr_cols, t_cols = get_shift_group_cols(components)
     ns = component_mask.shape[0]
     timeshift_mask = []
     for i in range(ns):
         if timeshift_group == 1:
             timeshift_mask.append(True)
         elif timeshift_group == 2:
-            timeshift_mask.append(np.any(component_mask[i,:2]==0))
-            timeshift_mask.append(np.any(component_mask[i,2]==0))
+            timeshift_mask.append(bool(zr_cols.size > 0 and np.any(component_mask[i, zr_cols]==0)))
+            timeshift_mask.append(bool(t_cols.size > 0 and np.any(component_mask[i, t_cols]==0)))
         else:
-            ValueError('Wrong timeshift_group.')
+            raise ValueError('Wrong timeshift_group.')
 
     #return the mask for likelihood calculation: True - need timeshift, False - no need timeshift
     return timeshift_mask
@@ -66,10 +78,11 @@ def shift_data(data, tau):
     dt = data[0][0].stats.delta
     omega = 2*np.pi*fftfreq(nt, d=dt)
     shift = -1 * tau
+    # mtuq removes zero-weight traces per station, so select by channel, not position.
     for s in range(ns):
-        data[s][0].data = np.real(ifft(fft(data[s][0].data) * np.exp(-1j*omega*shift[2*s])))
-        data[s][1].data = np.real(ifft(fft(data[s][1].data) * np.exp(-1j*omega*shift[2*s])))
-        data[s][2].data = np.real(ifft(fft(data[s][2].data) * np.exp(-1j*omega*shift[2*s+1])))    
+        for trace in data[s]:
+            k = 2*s+1 if trace.stats.channel[-1].upper() == 'T' else 2*s
+            trace.data = np.real(ifft(fft(trace.data) * np.exp(-1j*omega*shift[k])))
     return data
 
 def shift_greens(greens, tau):
@@ -79,7 +92,8 @@ def shift_greens(greens, tau):
     dt = greens[0][0].stats.delta
     omega = 2*np.pi*fftfreq(nt, d=dt)
     shift = tau
-    
+
+    # Fixed Z/R/T positions are safe here: ProcessData never removes Green's function traces.
     if ne == 9:
         for s in range(ns):
             for e in range(3):
